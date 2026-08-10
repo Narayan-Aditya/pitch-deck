@@ -1,6 +1,4 @@
 import './globals.css';
-import { AuthProvider } from '@/lib/AuthContext';
-import AuthNav from './AuthNav';
 
 export const metadata = {
   title: 'Open Grey | Pitch Report Generator',
@@ -15,21 +13,21 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>
-        <AuthProvider>
-          {/* Navbar */}
-          <nav className="navbar">
-            <a href="/" className="navbar-brand" style={{ textDecoration: 'none' }}>
-              <div className="navbar-logo">OG</div>
-              <div>
-                <div className="navbar-name">Open Grey</div>
-                <div className="navbar-sub">Reports</div>
-              </div>
-            </a>
-            <AuthNav />
-          </nav>
+        {/* Navbar */}
+        <nav className="navbar">
+          <a href="/" className="navbar-brand" style={{ textDecoration: 'none' }}>
+            <div className="navbar-logo">OG</div>
+            <div>
+              <div className="navbar-name">Open Grey</div>
+              <div className="navbar-sub">Reports</div>
+            </div>
+          </a>
+          <a href="/new-report" className="btn btn-primary btn-sm">
+            + New Report
+          </a>
+        </nav>
 
-          <main>{children}</main>
-        </AuthProvider>
+        <main>{children}</main>
       </body>
     </html>
   );

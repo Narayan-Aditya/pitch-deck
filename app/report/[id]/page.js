@@ -3,11 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { extractHandle } from '@/lib/instagramHandle';
-import { useAuth } from '@/lib/AuthContext';
 import { getReport, updateReport } from '@/lib/reportStore';
-import { AUTH_ENABLED } from '@/lib/appConfig';
 import { buildPitchDeckPptx } from '@/lib/buildPptx';
-import { uploadPptxAsGoogleSlides } from '@/lib/googleSlides';
 import { hydrateCreatorThumbs } from '@/lib/creatorThumbs';
 
 const EMPTY_NEXT_STEP = {
@@ -28,10 +25,6 @@ function toNum(v) {
 function computeEngagementRatePct(followers, avgLikes, avgComments) {
   if (!followers) return 0;
   return Math.round(((avgLikes + avgComments) / followers) * 10000) / 100;
-}
-
-function toDate(ts) {
-  return ts?.toDate ? ts.toDate() : new Date(ts);
 }
 
 // Small status pill used on each step so a non-technical user can see at a
@@ -113,12 +106,10 @@ function StepCard({ n, title, subtitle, state, children, action, collapsible, op
 export default function ReportPage() {
   const params = useParams();
   const router = useRouter();
-  const { user, loading: authLoading, signIn, getFreshAccessToken } = useAuth();
 
   const [report, setReport] = useState(null);
   const [reportError, setReportError] = useState('');
   const [exportingPitch, setExportingPitch] = useState(false);
-  const [savingToSlides, setSavingToSlides] = useState(false);
   const [toast, setToast] = useState(null);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
 
@@ -162,11 +153,8 @@ export default function ReportPage() {
   const saveTimer = useRef(null);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (AUTH_ENABLED && !user) return;
-
     getReport(params.id).then(found => {
-      if (!found || (AUTH_ENABLED && found.ownerId !== user.uid)) {
+      if (!found) {
         setReportError('Report not found.');
         return;
       }
@@ -191,7 +179,7 @@ export default function ReportPage() {
       });
       hydrated.current = true;
     }).catch(err => setReportError(err.message || 'Could not load report'));
-  }, [params.id, user, authLoading]);
+  }, [params.id]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -275,7 +263,7 @@ export default function ReportPage() {
           postingFrequencyPerWeek: prev.postingFrequencyPerWeek === '' || prev.postingFrequencyPerWeek === 0
             ? (s.posts_per_week ?? prev.postingFrequencyPerWeek) : prev.postingFrequencyPerWeek,
         }));
-        setIgNote(`Using numbers collected ${s.scraped_at ? toDate(s.scraped_at).toLocaleString('en-IN') : 'earlier'}.`);
+        setIgNote(`Using numbers collected ${s.scraped_at ? new Date(s.scraped_at).toLocaleString('en-IN') : 'earlier'}.`);
       })
       .catch(() => setProfileResolved(true));
   }, [report, ig.handle]);
@@ -486,45 +474,7 @@ export default function ReportPage() {
     }
   };
 
-  const handleSaveToSlides = async () => {
-    setSavingToSlides(true);
-    showToast('⏳ Uploading to Google Slides…', 'info');
-    try {
-      const reportData = await hydrateCreatorThumbs(buildReportData());
-      const accessToken = await getFreshAccessToken();
-      if (!accessToken) throw new Error('Could not get Google Drive access — please sign in again.');
-      const blob = await buildPitchDeckPptx(reportData, report.brandName);
-      const link = await uploadPptxAsGoogleSlides(accessToken, blob, `${report.brandName} Pitch Deck`);
-      showToast('✅ Saved to Google Slides!');
-      window.open(link, '_blank', 'noopener,noreferrer');
-    } catch (err) {
-      showToast(`❌ ${err.message || 'Could not save to Google Slides'}`, 'error');
-    } finally {
-      setSavingToSlides(false);
-    }
-  };
-
   // ---------- gates ----------
-  if (authLoading) {
-    return (
-      <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <div className="spinner" style={{ width: '40px', height: '40px' }} />
-      </div>
-    );
-  }
-
-  if (AUTH_ENABLED && !user) {
-    return (
-      <div className="page" style={{ padding: '80px 0' }}>
-        <div className="container" style={{ maxWidth: '480px', textAlign: 'center' }}>
-          <h2 style={{ marginBottom: '12px' }}>Please sign in</h2>
-          <p style={{ marginBottom: '20px' }}>Sign in with Google to see this report.</p>
-          <button className="btn btn-primary" onClick={signIn}>Sign in with Google</button>
-        </div>
-      </div>
-    );
-  }
-
   if (reportError) {
     return (
       <div className="page" style={{ padding: '80px 0' }}>
@@ -943,12 +893,7 @@ export default function ReportPage() {
           <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             {readyCount} of {checklist.length} ready
           </span>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {AUTH_ENABLED && (
-              <button className="btn btn-secondary" onClick={handleSaveToSlides} disabled={savingToSlides}>
-                {savingToSlides ? <><div className="spinner" /> Saving…</> : '📽️ Open in Google Slides'}
-              </button>
-            )}
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
             <button className="btn btn-primary btn-lg" onClick={handleExportPitchDeck} disabled={exportingPitch}>
               {exportingPitch ? <><div className="spinner" /> Building…</> : '⬇️ Download PowerPoint'}
             </button>

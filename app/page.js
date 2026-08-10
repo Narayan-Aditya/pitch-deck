@@ -2,25 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/lib/AuthContext';
 import { listReports, deleteReport } from '@/lib/reportStore';
-import { AUTH_ENABLED } from '@/lib/appConfig';
 
 export default function Dashboard() {
-  const { user, loading, signIn } = useAuth();
   const [reports, setReports] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(true);
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) {
-      setReports([]);
-      setReportsLoading(false);
-      return;
-    }
-    setReportsLoading(true);
-    listReports(user.uid).then(setReports).finally(() => setReportsLoading(false));
-  }, [user, loading]);
+    listReports().then(setReports).finally(() => setReportsLoading(false));
+  }, []);
 
   const handleDelete = (id, e) => {
     e.preventDefault();
@@ -28,10 +18,8 @@ export default function Dashboard() {
     deleteReport(id).then(() => setReports(prev => prev.filter(r => r.id !== id)));
   };
 
-  const formatDate = (ts) => {
-    const d = ts?.toDate ? ts.toDate() : new Date(ts);
-    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  };
+  const formatDate = (ts) =>
+    new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
     <div className="page" style={{ padding: '48px 0' }}>
@@ -43,31 +31,25 @@ export default function Dashboard() {
             Brand Pitch Report Generator
           </h1>
           <p style={{ fontSize: '18px', color: 'var(--text-secondary)', maxWidth: '600px', margin: '0 auto 32px' }}>
-            Enter a brand name and Instagram handle to generate a pitch report as an editable PowerPoint — or save it straight to Google Slides.
+            Enter a brand name and Instagram handle to generate a pitch report as an editable PowerPoint.
           </p>
-          {AUTH_ENABLED && !loading && !user ? (
-            <button className="btn btn-primary btn-lg" onClick={signIn}>
-              Sign in with Google to get started
-            </button>
-          ) : (
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <Link href="/new-report" className="btn btn-primary btn-lg">
-                Generate New Report
-              </Link>
-              {reports.length > 0 && (
-                <a href="#history" className="btn btn-secondary btn-lg">
-                  View History ({reports.length})
-                </a>
-              )}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Link href="/new-report" className="btn btn-primary btn-lg">
+              Generate New Report
+            </Link>
+            {reports.length > 0 && (
+              <a href="#history" className="btn btn-secondary btn-lg">
+                View History ({reports.length})
+              </a>
+            )}
+          </div>
         </div>
 
-        {loading || (user && reportsLoading) ? (
+        {reportsLoading ? (
           <div style={{ textAlign: 'center', padding: '48px' }}>
             <div className="spinner" style={{ width: '32px', height: '32px', margin: '0 auto' }} />
           </div>
-        ) : user ? (
+        ) : (
           <>
             {/* Report History */}
             {reports.length > 0 && (
@@ -121,7 +103,7 @@ export default function Dashboard() {
               </div>
             )}
           </>
-        ) : null}
+        )}
 
         {/* Footer */}
         <div style={{ textAlign: 'center', marginTop: '80px', padding: '24px 0', borderTop: '1px solid var(--border)' }}>

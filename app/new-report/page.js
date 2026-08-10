@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { extractHandle } from '@/lib/instagramHandle';
-import { useAuth } from '@/lib/AuthContext';
 import { createReport } from '@/lib/reportStore';
 
 const initialForm = {
@@ -13,7 +12,6 @@ const initialForm = {
 
 export default function NewReport() {
   const router = useRouter();
-  const { user, loading: authLoading, signIn } = useAuth();
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -39,14 +37,6 @@ export default function NewReport() {
     setLoading(true);
 
     try {
-      // Don't rely on the `user` from closure state after signIn() resolves —
-      // React state updates from onAuthStateChanged land on a later render,
-      // not synchronously here, so the closure's `user` would still read
-      // null. Use signIn()'s own return value instead, so a single click
-      // signs in AND creates the report instead of silently stopping after
-      // the popup closes (previously required a second click).
-      const currentUser = user || await signIn();
-
       const reportData = {
         brandName: form.brandName,
         generatedAt: new Date().toISOString(),
@@ -67,7 +57,7 @@ export default function NewReport() {
         },
       };
 
-      const id = await createReport(currentUser.uid, {
+      const id = await createReport({
         brandName: form.brandName,
         instagram: form.instagram,
         reportData,
@@ -91,13 +81,6 @@ export default function NewReport() {
           <h2 style={{ marginBottom: '8px' }}>New Pitch Report</h2>
           <p>Enter a brand name and Instagram handle — you'll fill in the brand facts and Instagram numbers on the next page.</p>
         </div>
-
-        {!authLoading && !user && (
-          <div className="card" style={{ marginBottom: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '14px' }}>Sign in with Google to create and save reports.</p>
-            <button className="btn btn-primary" onClick={signIn}>Sign in with Google</button>
-          </div>
-        )}
 
         {/* Form Card */}
         <div className="card" style={{ marginBottom: '24px' }}>
@@ -129,10 +112,10 @@ export default function NewReport() {
         <button
           className="btn btn-primary btn-lg"
           onClick={handleSubmit}
-          disabled={loading || authLoading}
+          disabled={loading}
           style={{ width: '100%' }}
         >
-          {loading ? <><div className="spinner" /> Creating...</> : authLoading ? <div className="spinner" /> : user ? 'Create Report' : 'Sign in & Create Report'}
+          {loading ? <><div className="spinner" /> Creating...</> : 'Create Report'}
         </button>
 
       </div>
