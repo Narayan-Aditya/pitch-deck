@@ -10,15 +10,6 @@ import { buildPitchDeckPptx } from '@/lib/buildPptx';
 import { uploadPptxAsGoogleSlides } from '@/lib/googleSlides';
 import { hydrateCreatorThumbs } from '@/lib/creatorThumbs';
 
-const EMPTY_PRICING = {
-  lineItems: [
-    { label: 'Podcast production + studio', value: '' },
-    { label: '20 Instagram Reels (agency rate)', value: '' },
-    { label: '10-20 YouTube Shorts', value: '' },
-    { label: 'Multi-platform distribution', value: '' },
-  ],
-  totalValue: '', yourInvestment: '', riskReversal: '',
-};
 const EMPTY_NEXT_STEP = {
   headline: 'A 20-minute call to lock your episode date.',
   bookingLink: '', email: '', phone: '', scarcity: '',
@@ -57,26 +48,64 @@ function StepBadge({ state }) {
   );
 }
 
-function StepCard({ n, title, subtitle, state, children, action }) {
+// The auto-generating steps stay collapsed so the page reads as a short
+// checklist rather than a wall of forms. They open on demand — and open
+// themselves when generation fails, which is exactly when someone needs to
+// see the fields to fill them in by hand.
+function StepCard({ n, title, subtitle, state, children, action, collapsible, open, onToggle, error }) {
+  const isOpen = collapsible ? open : true;
+  const badgeState = error ? 'needs' : state;
+
   return (
-    <div className="card" style={{ marginBottom: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: children ? '18px' : 0 }}>
+    <div className="card" style={{ marginBottom: '20px', borderColor: error ? 'var(--error)' : undefined }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: isOpen && children ? '18px' : 0 }}>
         <div style={{
           width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
-          background: state === 'done' ? 'var(--success)' : 'var(--accent)',
+          background: error ? 'var(--error)' : badgeState === 'done' ? 'var(--success)' : 'var(--accent)',
           color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontWeight: '700', fontSize: '14px', fontFamily: 'Poppins, sans-serif',
-        }}>{n}</div>
-        <div style={{ flex: 1 }}>
+        }}>{badgeState === 'done' && !error ? '✓' : n}</div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <h3 style={{ fontSize: '17px', margin: 0 }}>{title}</h3>
-            <StepBadge state={state} />
-            {action}
+            {collapsible ? (
+              <button
+                onClick={onToggle}
+                style={{
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                  font: 'inherit', display: 'flex', alignItems: 'center', gap: '8px',
+                }}
+                aria-expanded={isOpen}
+              >
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{isOpen ? '▼' : '▶'}</span>
+                <h3 style={{ fontSize: '17px', margin: 0 }}>{title}</h3>
+              </button>
+            ) : (
+              <h3 style={{ fontSize: '17px', margin: 0 }}>{title}</h3>
+            )}
+            <StepBadge state={badgeState} />
+            {isOpen && action}
           </div>
-          {subtitle && <p style={{ fontSize: '13px', margin: '4px 0 0' }}>{subtitle}</p>}
+
+          {error ? (
+            <p style={{ fontSize: '13px', margin: '6px 0 0', color: 'var(--error)' }}>
+              Couldn&apos;t do this automatically: {error} — fill it in below.
+            </p>
+          ) : (
+            subtitle && <p style={{ fontSize: '13px', margin: '4px 0 0' }}>{subtitle}</p>
+          )}
+
+          {collapsible && !isOpen && (
+            <button
+              onClick={onToggle}
+              style={{ background: 'none', border: 'none', padding: '6px 0 0', cursor: 'pointer', color: 'var(--accent)', fontSize: '12px', fontWeight: 600 }}
+            >
+              Open to check or edit
+            </button>
+          )}
         </div>
       </div>
-      {children}
+      {isOpen && children}
     </div>
   );
 }
@@ -98,7 +127,6 @@ export default function ReportPage() {
   const [instagramInsight, setInstagramInsight] = useState('');
   const [audienceFit, setAudienceFit] = useState('');
   const [creatorMatches, setCreatorMatches] = useState([]);
-  const [pricing, setPricing] = useState(EMPTY_PRICING);
   const [nextStep, setNextStep] = useState(EMPTY_NEXT_STEP);
 
   const [fetchingIg, setFetchingIg] = useState(false);
@@ -108,6 +136,17 @@ export default function ReportPage() {
   const [findingMatches, setFindingMatches] = useState(false);
   const [matchNote, setMatchNote] = useState('');
   const [igNote, setIgNote] = useState('');
+
+  // Collapsed by default; a failure force-opens its own step so the manual
+  // fields are right there instead of behind another click.
+  const [expanded, setExpanded] = useState({});
+  const [stepErrors, setStepErrors] = useState({});
+  const toggleStep = (k) => setExpanded(p => ({ ...p, [k]: !p[k] }));
+  const failStep = (k, message) => {
+    setStepErrors(p => ({ ...p, [k]: message }));
+    setExpanded(p => ({ ...p, [k]: true }));
+  };
+  const clearStep = (k) => setStepErrors(p => (p[k] ? { ...p, [k]: null } : p));
 
   const autoStatsTried = useRef(false);
   const autoOverviewTried = useRef(false);
@@ -132,7 +171,6 @@ export default function ReportPage() {
       setInstagramInsight(rd.instagramInsight || '');
       setAudienceFit(rd.audienceFit || '');
       setCreatorMatches(rd.creatorMatches || []);
-      setPricing({ ...EMPTY_PRICING, ...rd.pricing });
       setNextStep({ ...EMPTY_NEXT_STEP, ...rd.nextStep });
       const savedIg = rd.instagramAnalytics || {};
       const videoPct = savedIg.contentMix?.find(c => c.type === 'Video/Reel')?.percentage;
@@ -166,7 +204,6 @@ export default function ReportPage() {
       instagramInsight,
       audienceFit,
       creatorMatches,
-      pricing,
       nextStep,
       instagramAnalytics: {
         handle: ig.handle || extractHandle(report.instagram),
@@ -203,7 +240,7 @@ export default function ReportPage() {
     }, 900);
     return () => clearTimeout(saveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [about, ig, instagramInsight, audienceFit, creatorMatches, pricing, nextStep]);
+  }, [about, ig, instagramInsight, audienceFit, creatorMatches, nextStep]);
 
   // ---------- auto-fill Instagram numbers from a previous scrape ----------
   useEffect(() => {
@@ -262,7 +299,7 @@ export default function ReportPage() {
       showToast(`✅ Got @${s.username}'s numbers`);
     } catch (err) {
       setIgNote('');
-      showToast(`❌ ${err.message || 'Could not get Instagram numbers'}`, 'error');
+      failStep('ig', err.message || 'could not reach that profile');
     } finally {
       setFetchingIg(false);
     }
@@ -280,8 +317,9 @@ export default function ReportPage() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Generation failed');
       setAbout(prev => ({ ...prev, ...data.about }));
+      clearStep('about');
     } catch (err) {
-      showToast(`❌ ${err.message || 'Could not write the brand summary'}`, 'error');
+      failStep('about', err.message || 'the lookup failed');
     } finally {
       setGeneratingOverview(false);
     }
@@ -299,8 +337,9 @@ export default function ReportPage() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Generation failed');
       setInstagramInsight(data.insight);
+      clearStep('insight');
     } catch (err) {
-      showToast(`❌ ${err.message || 'Could not write the insight'}`, 'error');
+      failStep('insight', err.message || 'the write-up failed');
     } finally {
       setGeneratingInsight(false);
     }
@@ -318,8 +357,9 @@ export default function ReportPage() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Generation failed');
       setAudienceFit(data.audienceFit);
+      clearStep('fit');
     } catch (err) {
-      showToast(`❌ ${err.message || 'Could not write this section'}`, 'error');
+      failStep('fit', err.message || 'the write-up failed');
     } finally {
       setGeneratingFit(false);
     }
@@ -344,9 +384,10 @@ export default function ReportPage() {
             : "Nothing in our library is close enough to this brand's category — this slide will be left out."
         );
       }
+      clearStep('matches');
     } catch (err) {
       setMatchNote('');
-      showToast(`❌ ${err.message || 'Could not search our content'}`, 'error');
+      failStep('matches', err.message || 'the search failed');
     } finally {
       setFindingMatches(false);
     }
@@ -503,7 +544,6 @@ export default function ReportPage() {
     { label: 'Instagram numbers added', ok: igState === 'done' },
     { label: 'Instagram insight written', ok: insightState === 'done' },
     { label: 'Our related videos found', ok: creatorMatches.length > 0, optional: true },
-    { label: 'Price for this brand', ok: !!pricing.yourInvestment.trim(), optional: true },
     { label: 'Contact details on the last slide', ok: !!(nextStep.bookingLink.trim() || nextStep.email.trim() || nextStep.phone.trim()) },
   ];
   const readyCount = checklist.filter(c => c.ok).length;
@@ -537,6 +577,10 @@ export default function ReportPage() {
         <StepCard
           n={1}
           title="About the brand"
+          collapsible
+          open={!!expanded.about}
+          onToggle={() => toggleStep('about')}
+          error={stepErrors.about}
           subtitle="Written automatically by looking the brand up online. Check it's right — this goes in front of a client."
           state={aboutState}
           action={
@@ -580,6 +624,10 @@ export default function ReportPage() {
         <StepCard
           n={2}
           title="Their Instagram numbers"
+          collapsible
+          open={!!expanded.ig}
+          onToggle={() => toggleStep('ig')}
+          error={stepErrors.ig}
           subtitle={igNote || "Collected straight from their Instagram profile."}
           state={igState}
           action={
@@ -643,6 +691,10 @@ export default function ReportPage() {
         <StepCard
           n={3}
           title="What their numbers mean"
+          collapsible
+          open={!!expanded.insight}
+          onToggle={() => toggleStep('insight')}
+          error={stepErrors.insight}
           subtitle="The selling paragraph on the Instagram slide. Kept under 100 words so it fits."
           state={insightState}
           action={
@@ -663,6 +715,10 @@ export default function ReportPage() {
         <StepCard
           n={4}
           title="Why we're a good fit for them"
+          collapsible
+          open={!!expanded.fit}
+          onToggle={() => toggleStep('fit')}
+          error={stepErrors.fit}
           subtitle="Connects your audience to their customers. Leave blank to skip this slide."
           state={fitState}
           action={
@@ -680,6 +736,10 @@ export default function ReportPage() {
         <StepCard
           n={5}
           title="Our videos about their business"
+          collapsible
+          open={!!expanded.matches}
+          onToggle={() => toggleStep('matches')}
+          error={stepErrors.matches}
           subtitle={matchNote || "Picked automatically from our YouTube and Instagram. Remove any that don't fit — the slide is left out if none are kept."}
           state={findingMatches ? 'working' : creatorMatches.length ? 'done' : 'needs'}
           action={
@@ -776,57 +836,9 @@ export default function ReportPage() {
           )}
         </StepCard>
 
-        {/* ---------- STEP 6: PRICE ---------- */}
+        {/* ---------- STEP 6: CONTACT ---------- */}
         <StepCard
           n={6}
-          title="Your price for this brand"
-          subtitle="Listing what each piece would cost separately makes your actual price look small. Leave blank to skip this slide."
-          state={pricing.yourInvestment.trim() ? 'done' : 'needs'}
-        >
-          <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '10px' }}>
-            What it would cost them separately:
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '18px' }}>
-            {pricing.lineItems.map((l, i) => (
-              <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <span style={{ flex: 1, fontSize: '13px', color: 'var(--text-secondary)' }}>{l.label}</span>
-                <input
-                  className="form-input" style={{ width: '150px' }} placeholder="₹ 50,000"
-                  value={l.value}
-                  onChange={e => setPricing(p => ({
-                    ...p,
-                    lineItems: p.lineItems.map((x, xi) => (xi === i ? { ...x, value: e.target.value } : x)),
-                  }))}
-                />
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
-            <div className="form-grid">
-              <div className="form-group">
-                <label className="form-label">Total value (all added up)</label>
-                <input className="form-input" placeholder="₹ 2,00,000" value={pricing.totalValue}
-                  onChange={e => setPricing(p => ({ ...p, totalValue: e.target.value }))} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Your actual price</label>
-                <input className="form-input" placeholder="₹ 75,000" value={pricing.yourInvestment}
-                  onChange={e => setPricing(p => ({ ...p, yourInvestment: e.target.value }))} />
-              </div>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Your guarantee (optional — this is what closes deals)</label>
-              <input className="form-input"
-                placeholder="e.g. If the episode doesn't hit 500K views in 30 days, the next one is free."
-                value={pricing.riskReversal}
-                onChange={e => setPricing(p => ({ ...p, riskReversal: e.target.value }))} />
-            </div>
-          </div>
-        </StepCard>
-
-        {/* ---------- STEP 7: CONTACT ---------- */}
-        <StepCard
-          n={7}
           title="How they contact you"
           subtitle="The last slide. Without this, someone who likes your pitch has no idea what to do next."
           state={(nextStep.bookingLink.trim() || nextStep.email.trim() || nextStep.phone.trim()) ? 'done' : 'needs'}
