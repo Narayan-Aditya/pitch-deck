@@ -15,7 +15,10 @@ const HANDLE_RE = /^[A-Za-z0-9._]{1,30}$/;
 function runScraper(handle, cwd) {
   return new Promise((resolve) => {
     const bin = process.env.PYTHON_BIN || 'python';
-    const child = spawn(bin, [SCRIPT, handle], {
+    // turbopackIgnore: the binary and args are resolved at runtime by design
+    // (this shells out to the local Python scraper); there's nothing for the
+    // bundler to trace, and it only ever runs on a developer/office machine.
+    const child = spawn(/* turbopackIgnore: true */ bin, [SCRIPT, handle], {
       cwd,
       shell: false, // never interpolate through a shell
       // The script prints emoji/unicode; without this Python crashes with a
