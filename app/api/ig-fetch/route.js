@@ -1,70 +1,16 @@
 import { NextResponse } from 'next/server';
-import { spawn } from 'child_process';
-import { readFile } from 'fs/promises';
-import path from 'path';
-
-const SCRIPT = 'ig_data.py';
-const TIMEOUT_MS = 120000;
+import { scrapeInstagram } from '@/lib/instagramScrape';
 
 // Instagram usernames are letters, digits, periods and underscores, max 30.
-// This value is passed to a subprocess, so anything outside that charset is
-// rejected outright rather than escaped — combined with spawn()'s array form
-// (no shell), that leaves no path for argument/command injection.
+// The value is interpolated into a URL, so anything outside that charset is
+// rejected outright rather than escaped.
 const HANDLE_RE = /^[A-Za-z0-9._]{1,30}$/;
 
-function runScraper(handle, cwd) {
-  return new Promise((resolve) => {
-    const bin = process.env.PYTHON_BIN || 'python';
-    // turbopackIgnore: the binary and args are resolved at runtime by design
-    // (this shells out to the local Python scraper); there's nothing for the
-    // bundler to trace, and it only ever runs on a developer/office machine.
-    const child = spawn(/* turbopackIgnore: true */ bin, [SCRIPT, handle], {
-      cwd,
-      shell: false, // never interpolate through a shell
-      // The script prints emoji/unicode; without this Python crashes with a
-      // cp1252 UnicodeEncodeError on Windows consoles.
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-    });
-
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill();
-      resolve({ ok: false, stdout, stderr: `${stderr}\n[timed out after ${TIMEOUT_MS / 1000}s]` });
-    }, TIMEOUT_MS);
-
-    child.stdout.on('data', (d) => { stdout += d.toString(); });
-    child.stderr.on('data', (d) => { stderr += d.toString(); });
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      resolve({ ok: false, stdout, stderr: `Could not start "${bin}": ${err.message}` });
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({ ok: code === 0, code, stdout, stderr });
-    });
-  });
-}
+// Three sequential requests to instagram.com, which is not fast. Comfortably
+// inside 60s, but well past the 10s serverless default.
+export const maxDuration = 60;
 
 export async function POST(request) {
-  // Serverless hosts have no Python runtime and a read-only filesystem, so
-  // the scraper can't run there at all. Say so in words the salesperson can
-  // act on — the raw "spawn python ENOENT" that would otherwise surface on
-  // the report page means nothing to them.
-  //
-  // Phrased as a sentence fragment on purpose: the report page renders this
-  // inside "Couldn't do this automatically: {error} — fill it in below.", so
-  // anything self-contained ends up reading as a stutter.
-  if (process.env.VERCEL) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'fetching live Instagram numbers only works when the app runs on your own computer',
-      },
-      { status: 501 }
-    );
-  }
-
   let handle;
   try {
     ({ handle } = await request.json());
@@ -75,50 +21,22 @@ export async function POST(request) {
   handle = (handle || '').trim().replace(/^@/, '');
   if (!HANDLE_RE.test(handle)) {
     return NextResponse.json(
-      { success: false, error: 'Invalid Instagram handle (letters, numbers, dots and underscores only).' },
+      { success: false, error: 'that is not a valid Instagram username (letters, numbers, dots and underscores only)' },
       { status: 400 }
     );
   }
 
-  const cwd = process.cwd();
-  const { ok, stdout, stderr } = await runScraper(handle, cwd);
-
-  // The script reports per-handle failures on stdout ("ERR <handle> - ...")
-  // and still exits 0, so exit code alone isn't enough to judge success.
-  const errLine = stdout.split('\n').find((l) => l.startsWith(`ERR ${handle}`));
-  if (errLine) {
-    return NextResponse.json(
-      { success: false, error: errLine.replace(`ERR ${handle} - `, '').trim() || 'Scrape failed' },
-      { status: 502 }
-    );
-  }
-  if (!ok) {
-    const detail = (stderr || stdout).trim().split('\n').slice(-3).join(' ').slice(0, 300);
-    return NextResponse.json(
-      { success: false, error: detail || 'Scraper failed to run' },
-      { status: 500 }
-    );
-  }
-
-  let records;
   try {
-    const raw = await readFile(path.join(cwd, 'stats.json'), 'utf8');
-    const parsed = JSON.parse(raw);
-    records = Array.isArray(parsed) ? parsed : [parsed];
+    const stats = await scrapeInstagram(handle);
+    return NextResponse.json({ success: true, stats });
   } catch (err) {
-    return NextResponse.json(
-      { success: false, error: `Scraper ran but stats.json could not be read: ${err.message}` },
-      { status: 500 }
-    );
+    // Messages from scrapeInstagram are written as sentence fragments, because
+    // the report page renders them inside "Couldn't do this automatically:
+    // {error} — fill it in below."
+    const message = err?.name === 'TimeoutError'
+      ? 'Instagram took too long to respond'
+      : err?.message || 'the lookup failed';
+    console.error(`ig-fetch failed for @${handle}:`, err);
+    return NextResponse.json({ success: false, error: message }, { status: 502 });
   }
-
-  const match = records.find((r) => (r.username || '').toLowerCase() === handle.toLowerCase());
-  if (!match) {
-    return NextResponse.json(
-      { success: false, error: `Scraper ran but returned no data for @${handle}` },
-      { status: 502 }
-    );
-  }
-
-  return NextResponse.json({ success: true, stats: match });
 }
