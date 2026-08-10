@@ -9,6 +9,7 @@ import { AUTH_ENABLED } from '@/lib/appConfig';
 import { buildPitchDeckPptx } from '@/lib/buildPptx';
 import { uploadPptxAsGoogleSlides } from '@/lib/googleSlides';
 import { loadSettings, settingsCompleteness } from '@/lib/agencySettings';
+import { hydrateCreatorThumbs } from '@/lib/creatorThumbs';
 
 const EMPTY_ABOUT = { tagline: '', description: '', industry: '', foundedYear: '', headquarters: '' };
 const EMPTY_IG = {
@@ -84,18 +85,22 @@ export default function ReportPage() {
   const [ig, setIg] = useState(EMPTY_IG);
   const [instagramInsight, setInstagramInsight] = useState('');
   const [audienceFit, setAudienceFit] = useState('');
+  const [creatorMatches, setCreatorMatches] = useState([]);
   const [settings, setSettings] = useState(null);
 
   const [fetchingIg, setFetchingIg] = useState(false);
   const [generatingOverview, setGeneratingOverview] = useState(false);
   const [generatingInsight, setGeneratingInsight] = useState(false);
   const [generatingFit, setGeneratingFit] = useState(false);
+  const [findingMatches, setFindingMatches] = useState(false);
+  const [matchNote, setMatchNote] = useState('');
   const [igNote, setIgNote] = useState('');
 
   const autoStatsTried = useRef(false);
   const autoOverviewTried = useRef(false);
   const autoInsightTried = useRef(false);
   const autoFitTried = useRef(false);
+  const autoMatchesTried = useRef(false);
   const hydrated = useRef(false);
   const saveTimer = useRef(null);
 
@@ -115,6 +120,7 @@ export default function ReportPage() {
       setAbout({ ...EMPTY_ABOUT, ...rd.about });
       setInstagramInsight(rd.instagramInsight || '');
       setAudienceFit(rd.audienceFit || '');
+      setCreatorMatches(rd.creatorMatches || []);
       const savedIg = rd.instagramAnalytics || {};
       const videoPct = savedIg.contentMix?.find(c => c.type === 'Video/Reel')?.percentage;
       setIg({
@@ -146,6 +152,7 @@ export default function ReportPage() {
       about,
       instagramInsight,
       audienceFit,
+      creatorMatches,
       instagramAnalytics: {
         handle: ig.handle || extractHandle(report.instagram),
         followers,
@@ -181,7 +188,7 @@ export default function ReportPage() {
     }, 900);
     return () => clearTimeout(saveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [about, ig, instagramInsight, audienceFit]);
+  }, [about, ig, instagramInsight, audienceFit, creatorMatches]);
 
   // ---------- auto-fill Instagram numbers from a previous scrape ----------
   useEffect(() => {
@@ -303,6 +310,42 @@ export default function ReportPage() {
     }
   };
 
+  const handleFindCreatorMatches = async () => {
+    setFindingMatches(true);
+    setMatchNote('');
+    try {
+      const res = await fetch('/api/creator-matches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandName: report.brandName, about, limit: 3 }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Search failed');
+      setCreatorMatches(data.matches || []);
+      if (!data.matches?.length) {
+        setMatchNote(
+          data.reason === 'no-creator-data'
+            ? "No creator content library found on the server."
+            : "Nothing in our library is close enough to this brand's category — this slide will be left out."
+        );
+      }
+    } catch (err) {
+      setMatchNote('');
+      showToast(`❌ ${err.message || 'Could not search our content'}`, 'error');
+    } finally {
+      setFindingMatches(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!report || autoMatchesTried.current) return;
+    if (creatorMatches.length) return;
+    if (!about.industry && !about.description) return;
+    autoMatchesTried.current = true;
+    handleFindCreatorMatches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report, about.industry, about.description]);
+
   useEffect(() => {
     if (!report || autoOverviewTried.current) return;
     if (about.tagline || about.description) return;
@@ -333,7 +376,8 @@ export default function ReportPage() {
   const handleExportPitchDeck = async () => {
     setExportingPitch(true);
     try {
-      const reportData = buildReportData();
+      // Thumbnails are fetched here, not persisted — see lib/creatorThumbs.js
+      const reportData = await hydrateCreatorThumbs(buildReportData());
       const blob = await buildPitchDeckPptx(reportData, report.brandName, settings);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -353,7 +397,7 @@ export default function ReportPage() {
     setSavingToSlides(true);
     showToast('⏳ Uploading to Google Slides…', 'info');
     try {
-      const reportData = buildReportData();
+      const reportData = await hydrateCreatorThumbs(buildReportData());
       const accessToken = await getFreshAccessToken();
       if (!accessToken) throw new Error('Could not get Google Drive access — please sign in again.');
       const blob = await buildPitchDeckPptx(reportData, report.brandName, settings);
@@ -423,6 +467,7 @@ export default function ReportPage() {
     { label: 'Brand summary written', ok: aboutState === 'done' },
     { label: 'Instagram numbers added', ok: igState === 'done' },
     { label: 'Instagram insight written', ok: insightState === 'done' },
+    { label: 'Our related videos found', ok: creatorMatches.length > 0, optional: true },
     { label: 'Your past work (Company Details)', ok: comp.hasProof, fixHref: '/settings' },
     { label: 'Your pricing (Company Details)', ok: comp.hasPricing, fixHref: '/settings', optional: true },
     { label: 'Your contact info (Company Details)', ok: comp.hasNextStep, fixHref: '/settings' },
@@ -595,6 +640,72 @@ export default function ReportPage() {
           <textarea className="form-textarea" value={audienceFit}
             placeholder="Fills in automatically once the brand summary is ready…"
             onChange={e => setAudienceFit(e.target.value)} />
+        </StepCard>
+
+        {/* ---------- STEP 5 ---------- */}
+        <StepCard
+          n={5}
+          title="Our videos about their business"
+          subtitle={matchNote || "Picked automatically from our YouTube and Instagram. Remove any that don't fit — the slide is left out if none are kept."}
+          state={findingMatches ? 'working' : creatorMatches.length ? 'done' : 'needs'}
+          action={
+            <button className="btn btn-ghost btn-sm" onClick={handleFindCreatorMatches} disabled={findingMatches}>
+              {findingMatches ? <><div className="spinner" /> Searching…</> : '↻ Search again'}
+            </button>
+          }
+        >
+          {creatorMatches.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {creatorMatches.map((m, i) => (
+                <div key={m.id} style={{
+                  display: 'flex', gap: '12px', alignItems: 'flex-start',
+                  border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '12px',
+                }}>
+                  {m.platform === 'youtube' ? (
+                    <img
+                      src={`https://i.ytimg.com/vi/${m.id}/mqdefault.jpg`}
+                      alt=""
+                      style={{ width: '108px', height: '61px', objectFit: 'cover', borderRadius: '4px', flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: '108px', height: '61px', borderRadius: '4px', flexShrink: 0,
+                      background: 'var(--text-primary)', color: 'white',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px',
+                    }}>▶</div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap' }}>
+                      <span className="badge" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)', fontSize: '10px' }}>
+                        {m.platform === 'youtube' ? 'YouTube' : 'Instagram'}
+                      </span>
+                      {m.tier === 'brand' && <span className="badge badge-accent" style={{ fontSize: '10px' }}>Mentions them</span>}
+                      <a href={m.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px' }}>Open ↗</a>
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>{m.title}</div>
+                    <input
+                      className="form-input"
+                      style={{ fontSize: '12px', padding: '7px 10px' }}
+                      value={m.reason || ''}
+                      placeholder="One line on why this is relevant (shown on the slide)"
+                      onChange={e => setCreatorMatches(prev =>
+                        prev.map((x, xi) => (xi === i ? { ...x, reason: e.target.value } : x)))}
+                    />
+                  </div>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ color: 'var(--error)', flexShrink: 0 }}
+                    title="Remove from the deck"
+                    onClick={() => setCreatorMatches(prev => prev.filter((_, xi) => xi !== i))}
+                  >🗑</button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>
+              {findingMatches ? 'Looking through our videos and reels…' : matchNote || 'Nothing found yet.'}
+            </p>
+          )}
         </StepCard>
 
         {/* ---------- CHECKLIST ---------- */}
