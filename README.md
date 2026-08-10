@@ -45,8 +45,14 @@ Both are consequences of serverless hosting, not bugs:
   filesystem. The route detects this and says so; enter the numbers by hand, or
   run the scraper locally and read them off `stats.json`.
 - **Instagram auto-fill on page load.** `/api/ig-stats` reads `stats.json`,
-  which is gitignored scraper output and so is not deployed. It degrades to
-  "no stats" rather than erroring.
+  which is scraper output and is kept off the deploy by `.vercelignore`. It
+  degrades to "no stats" rather than erroring.
+
+  `.gitignore` alone is not enough here: the Vercel CLI uploads the working
+  directory without applying it, so a `vercel` deploy shipped one developer's
+  `stats.json` and served that brand's numbers to everyone. `.vercelignore` is
+  what actually keeps it out, and what makes a CLI deploy match a Git-connected
+  one. (The CLI does exclude `.env*` by itself — secrets are not affected.)
 
 Creator-content matching *does* work deployed: `nitin josi data/` is committed
 and traced into the function bundle via `outputFileTracingIncludes` in
