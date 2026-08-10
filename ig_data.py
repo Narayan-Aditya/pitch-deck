@@ -194,6 +194,13 @@ async def run(users, daily_cap=None):
 
                 rec = {
                     "username": user.get("username"),
+                    # Profile text/category — free, authoritative about what the
+                    # brand actually does, and enough to ground the brand
+                    # summary without a paid web search (see openaiGenerate.js).
+                    "full_name": user.get("full_name") or "",
+                    "biography": user.get("biography") or "",
+                    "ig_category": user.get("category") or "",
+                    "external_url": user.get("external_url") or "",
                     "followers": followers,
                     "following": following,
                     "total_posts": total_posts,
@@ -218,7 +225,11 @@ async def run(users, daily_cap=None):
         await browser.close()
 
     # save
-    json.dump(results, open(STATS_JSON, "w"), indent=2, ensure_ascii=False)
+    # encoding is not optional here: bios routinely contain emoji, and Windows
+    # defaults text writes to cp1252, which raises mid-write and leaves a
+    # truncated (0-byte) stats.json behind.
+    with open(STATS_JSON, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
     with open(STATS_CSV, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["username", "followers", "following", "total_posts", "avg_likes", "avg_comments", "video_reel_pct", "posts_per_week", "sampled_post_count"])

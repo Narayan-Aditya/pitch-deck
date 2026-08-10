@@ -127,6 +127,11 @@ export default function ReportPage() {
   const [instagramInsight, setInstagramInsight] = useState('');
   const [audienceFit, setAudienceFit] = useState('');
   const [creatorMatches, setCreatorMatches] = useState([]);
+  // Instagram bio/category — grounds the brand summary so it doesn't need a
+  // paid web search. `profileResolved` gates the auto-generate below: firing
+  // the overview before this lands would waste the grounding entirely.
+  const [igProfile, setIgProfile] = useState(null);
+  const [profileResolved, setProfileResolved] = useState(false);
   const [nextStep, setNextStep] = useState(EMPTY_NEXT_STEP);
 
   const [fetchingIg, setFetchingIg] = useState(false);
@@ -171,6 +176,7 @@ export default function ReportPage() {
       setInstagramInsight(rd.instagramInsight || '');
       setAudienceFit(rd.audienceFit || '');
       setCreatorMatches(rd.creatorMatches || []);
+      if (rd.igProfile) setIgProfile(rd.igProfile);
       setNextStep({ ...EMPTY_NEXT_STEP, ...rd.nextStep });
       const savedIg = rd.instagramAnalytics || {};
       const videoPct = savedIg.contentMix?.find(c => c.type === 'Video/Reel')?.percentage;
@@ -205,6 +211,7 @@ export default function ReportPage() {
       audienceFit,
       creatorMatches,
       nextStep,
+      igProfile,
       instagramAnalytics: {
         handle: ig.handle || extractHandle(report.instagram),
         followers,
@@ -240,7 +247,7 @@ export default function ReportPage() {
     }, 900);
     return () => clearTimeout(saveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [about, ig, instagramInsight, audienceFit, creatorMatches, nextStep]);
+  }, [about, ig, instagramInsight, audienceFit, creatorMatches, nextStep, igProfile]);
 
   // ---------- auto-fill Instagram numbers from a previous scrape ----------
   useEffect(() => {
@@ -252,8 +259,12 @@ export default function ReportPage() {
     fetch(`/api/ig-stats?handle=${encodeURIComponent(handle)}`)
       .then(res => res.json())
       .then(data => {
-        if (!data.success || !data.stats) return;
+        if (!data.success || !data.stats) { setProfileResolved(true); return; }
         const s = data.stats;
+        if (s.biography || s.ig_category || s.external_url) {
+          setIgProfile({ biography: s.biography || '', ig_category: s.ig_category || '', external_url: s.external_url || '' });
+        }
+        setProfileResolved(true);
         setIg(prev => ({
           ...prev,
           followers: prev.followers === '' || prev.followers === 0 ? (s.followers ?? prev.followers) : prev.followers,
@@ -266,7 +277,7 @@ export default function ReportPage() {
         }));
         setIgNote(`Using numbers collected ${s.scraped_at ? toDate(s.scraped_at).toLocaleString('en-IN') : 'earlier'}.`);
       })
-      .catch(() => {});
+      .catch(() => setProfileResolved(true));
   }, [report, ig.handle]);
 
   const handleFetchInstagramData = async () => {
@@ -295,6 +306,10 @@ export default function ReportPage() {
         videoReelPct: s.video_reel_pct ?? prev.videoReelPct,
         postingFrequencyPerWeek: s.posts_per_week ?? prev.postingFrequencyPerWeek,
       }));
+      if (s.biography || s.ig_category || s.external_url) {
+        setIgProfile({ biography: s.biography || '', ig_category: s.ig_category || '', external_url: s.external_url || '' });
+      }
+      setProfileResolved(true);
       setIgNote(`Fresh numbers, just collected — based on their ${s.sampled_post_count ?? 12} most recent posts.`);
       showToast(`✅ Got @${s.username}'s numbers`);
     } catch (err) {
@@ -312,7 +327,7 @@ export default function ReportPage() {
       const res = await fetch('/api/generate-overview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandName: report.brandName, instagram: report.instagram }),
+        body: JSON.stringify({ brandName: report.brandName, instagram: report.instagram, profile: igProfile }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Generation failed');
@@ -426,10 +441,11 @@ export default function ReportPage() {
   useEffect(() => {
     if (!report || autoOverviewTried.current) return;
     if (about.tagline || about.description) return;
+    if (!profileResolved) return;   // wait for the free grounding data first
     autoOverviewTried.current = true;
     handleGenerateOverview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [report, about.tagline, about.description]);
+  }, [report, about.tagline, about.description, profileResolved]);
 
   useEffect(() => {
     if (!report || autoInsightTried.current) return;
