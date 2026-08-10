@@ -8,9 +8,21 @@ import { getReport, updateReport } from '@/lib/reportStore';
 import { AUTH_ENABLED } from '@/lib/appConfig';
 import { buildPitchDeckPptx } from '@/lib/buildPptx';
 import { uploadPptxAsGoogleSlides } from '@/lib/googleSlides';
-import { loadSettings, settingsCompleteness } from '@/lib/agencySettings';
 import { hydrateCreatorThumbs } from '@/lib/creatorThumbs';
 
+const EMPTY_PRICING = {
+  lineItems: [
+    { label: 'Podcast production + studio', value: '' },
+    { label: '20 Instagram Reels (agency rate)', value: '' },
+    { label: '10-20 YouTube Shorts', value: '' },
+    { label: 'Multi-platform distribution', value: '' },
+  ],
+  totalValue: '', yourInvestment: '', riskReversal: '',
+};
+const EMPTY_NEXT_STEP = {
+  headline: 'A 20-minute call to lock your episode date.',
+  bookingLink: '', email: '', phone: '', scarcity: '',
+};
 const EMPTY_ABOUT = { tagline: '', description: '', industry: '', foundedYear: '', headquarters: '' };
 const EMPTY_IG = {
   handle: '', followers: '', totalPosts: '', avgLikes: '', avgComments: '',
@@ -86,7 +98,8 @@ export default function ReportPage() {
   const [instagramInsight, setInstagramInsight] = useState('');
   const [audienceFit, setAudienceFit] = useState('');
   const [creatorMatches, setCreatorMatches] = useState([]);
-  const [settings, setSettings] = useState(null);
+  const [pricing, setPricing] = useState(EMPTY_PRICING);
+  const [nextStep, setNextStep] = useState(EMPTY_NEXT_STEP);
 
   const [fetchingIg, setFetchingIg] = useState(false);
   const [generatingOverview, setGeneratingOverview] = useState(false);
@@ -104,8 +117,6 @@ export default function ReportPage() {
   const hydrated = useRef(false);
   const saveTimer = useRef(null);
 
-  useEffect(() => { setSettings(loadSettings()); }, []);
-
   useEffect(() => {
     if (authLoading) return;
     if (AUTH_ENABLED && !user) return;
@@ -121,6 +132,8 @@ export default function ReportPage() {
       setInstagramInsight(rd.instagramInsight || '');
       setAudienceFit(rd.audienceFit || '');
       setCreatorMatches(rd.creatorMatches || []);
+      setPricing({ ...EMPTY_PRICING, ...rd.pricing });
+      setNextStep({ ...EMPTY_NEXT_STEP, ...rd.nextStep });
       const savedIg = rd.instagramAnalytics || {};
       const videoPct = savedIg.contentMix?.find(c => c.type === 'Video/Reel')?.percentage;
       setIg({
@@ -153,6 +166,8 @@ export default function ReportPage() {
       instagramInsight,
       audienceFit,
       creatorMatches,
+      pricing,
+      nextStep,
       instagramAnalytics: {
         handle: ig.handle || extractHandle(report.instagram),
         followers,
@@ -188,7 +203,7 @@ export default function ReportPage() {
     }, 900);
     return () => clearTimeout(saveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [about, ig, instagramInsight, audienceFit, creatorMatches]);
+  }, [about, ig, instagramInsight, audienceFit, creatorMatches, pricing, nextStep]);
 
   // ---------- auto-fill Instagram numbers from a previous scrape ----------
   useEffect(() => {
@@ -337,6 +352,27 @@ export default function ReportPage() {
     }
   };
 
+  // Fallback for when the automatic search finds nothing relevant, or the
+  // right video simply isn't in the scraped library — the salesperson can
+  // still put a video on the slide by hand.
+  const handleAddManualMatch = () => {
+    setCreatorMatches(prev => [...prev, {
+      id: `manual_${Date.now()}`,
+      manual: true,
+      platform: 'youtube',
+      url: '',
+      title: '',
+      reason: '',
+      tier: 'topical',
+      relevance: 'direct',
+    }]);
+    setMatchNote('');
+  };
+
+  const updateMatch = (index, field, value) => {
+    setCreatorMatches(prev => prev.map((m, i) => (i === index ? { ...m, [field]: value } : m)));
+  };
+
   useEffect(() => {
     if (!report || autoMatchesTried.current) return;
     if (creatorMatches.length) return;
@@ -378,7 +414,7 @@ export default function ReportPage() {
     try {
       // Thumbnails are fetched here, not persisted — see lib/creatorThumbs.js
       const reportData = await hydrateCreatorThumbs(buildReportData());
-      const blob = await buildPitchDeckPptx(reportData, report.brandName, settings);
+      const blob = await buildPitchDeckPptx(reportData, report.brandName);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -400,7 +436,7 @@ export default function ReportPage() {
       const reportData = await hydrateCreatorThumbs(buildReportData());
       const accessToken = await getFreshAccessToken();
       if (!accessToken) throw new Error('Could not get Google Drive access — please sign in again.');
-      const blob = await buildPitchDeckPptx(reportData, report.brandName, settings);
+      const blob = await buildPitchDeckPptx(reportData, report.brandName);
       const link = await uploadPptxAsGoogleSlides(accessToken, blob, `${report.brandName} Pitch Deck`);
       showToast('✅ Saved to Google Slides!');
       window.open(link, '_blank', 'noopener,noreferrer');
@@ -456,7 +492,6 @@ export default function ReportPage() {
 
   const videoReelPctPreview = Math.min(Math.max(toNum(ig.videoReelPct), 0), 100);
   const engagementPreview = computeEngagementRatePct(toNum(ig.followers), toNum(ig.avgLikes), toNum(ig.avgComments));
-  const comp = settings ? settingsCompleteness(settings) : { hasPricing: false, hasNextStep: false };
 
   const aboutState = generatingOverview ? 'working' : (about.tagline && about.description) ? 'done' : 'needs';
   const igState = fetchingIg ? 'working' : toNum(ig.followers) ? 'done' : 'needs';
@@ -468,8 +503,8 @@ export default function ReportPage() {
     { label: 'Instagram numbers added', ok: igState === 'done' },
     { label: 'Instagram insight written', ok: insightState === 'done' },
     { label: 'Our related videos found', ok: creatorMatches.length > 0, optional: true },
-    { label: 'Your pricing (Company Details)', ok: comp.hasPricing, fixHref: '/settings', optional: true },
-    { label: 'Your contact info (Company Details)', ok: comp.hasNextStep, fixHref: '/settings' },
+    { label: 'Price for this brand', ok: !!pricing.yourInvestment.trim(), optional: true },
+    { label: 'Contact details on the last slide', ok: !!(nextStep.bookingLink.trim() || nextStep.email.trim() || nextStep.phone.trim()) },
   ];
   const readyCount = checklist.filter(c => c.ok).length;
 
@@ -648,9 +683,14 @@ export default function ReportPage() {
           subtitle={matchNote || "Picked automatically from our YouTube and Instagram. Remove any that don't fit — the slide is left out if none are kept."}
           state={findingMatches ? 'working' : creatorMatches.length ? 'done' : 'needs'}
           action={
-            <button className="btn btn-ghost btn-sm" onClick={handleFindCreatorMatches} disabled={findingMatches}>
-              {findingMatches ? <><div className="spinner" /> Searching…</> : '↻ Search again'}
-            </button>
+            <>
+              <button className="btn btn-ghost btn-sm" onClick={handleFindCreatorMatches} disabled={findingMatches}>
+                {findingMatches ? <><div className="spinner" /> Searching…</> : '↻ Search again'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={handleAddManualMatch} disabled={creatorMatches.length >= 3}>
+                + Add one myself
+              </button>
+            </>
           }
         >
           {creatorMatches.length > 0 ? (
@@ -660,7 +700,7 @@ export default function ReportPage() {
                   display: 'flex', gap: '12px', alignItems: 'flex-start',
                   border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '12px',
                 }}>
-                  {m.platform === 'youtube' ? (
+                  {m.platform === 'youtube' && !m.manual ? (
                     <img
                       src={`https://i.ytimg.com/vi/${m.id}/mqdefault.jpg`}
                       alt=""
@@ -673,22 +713,51 @@ export default function ReportPage() {
                       display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px',
                     }}>▶</div>
                   )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap' }}>
-                      <span className="badge" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)', fontSize: '10px' }}>
-                        {m.platform === 'youtube' ? 'YouTube' : 'Instagram'}
-                      </span>
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {m.manual ? (
+                        <select
+                          className="form-select"
+                          style={{ width: 'auto', fontSize: '11px', padding: '3px 8px' }}
+                          value={m.platform}
+                          onChange={e => updateMatch(i, 'platform', e.target.value)}
+                        >
+                          <option value="youtube">YouTube</option>
+                          <option value="instagram">Instagram</option>
+                        </select>
+                      ) : (
+                        <span className="badge" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)', fontSize: '10px' }}>
+                          {m.platform === 'youtube' ? 'YouTube' : 'Instagram'}
+                        </span>
+                      )}
                       {m.tier === 'brand' && <span className="badge badge-accent" style={{ fontSize: '10px' }}>Mentions them</span>}
-                      <a href={m.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px' }}>Open ↗</a>
+                      {m.manual && <span className="badge" style={{ background: 'var(--warning-soft)', color: 'var(--warning)', fontSize: '10px' }}>Added by you</span>}
+                      {m.url && <a href={m.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px' }}>Open ↗</a>}
                     </div>
-                    <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>{m.title}</div>
+
+                    {m.manual ? (
+                      <>
+                        <input
+                          className="form-input" style={{ fontSize: '12px', padding: '7px 10px' }}
+                          value={m.title || ''} placeholder="Video title (shown on the slide)"
+                          onChange={e => updateMatch(i, 'title', e.target.value)}
+                        />
+                        <input
+                          className="form-input" style={{ fontSize: '12px', padding: '7px 10px' }}
+                          value={m.url || ''} placeholder="Link to the video or reel"
+                          onChange={e => updateMatch(i, 'url', e.target.value)}
+                        />
+                      </>
+                    ) : (
+                      <div style={{ fontSize: '13px', fontWeight: '600' }}>{m.title}</div>
+                    )}
+
                     <input
                       className="form-input"
                       style={{ fontSize: '12px', padding: '7px 10px' }}
                       value={m.reason || ''}
                       placeholder="One line on why this is relevant (shown on the slide)"
-                      onChange={e => setCreatorMatches(prev =>
-                        prev.map((x, xi) => (xi === i ? { ...x, reason: e.target.value } : x)))}
+                      onChange={e => updateMatch(i, 'reason', e.target.value)}
                     />
                   </div>
                   <button
@@ -705,6 +774,93 @@ export default function ReportPage() {
               {findingMatches ? 'Looking through our videos and reels…' : matchNote || 'Nothing found yet.'}
             </p>
           )}
+        </StepCard>
+
+        {/* ---------- STEP 6: PRICE ---------- */}
+        <StepCard
+          n={6}
+          title="Your price for this brand"
+          subtitle="Listing what each piece would cost separately makes your actual price look small. Leave blank to skip this slide."
+          state={pricing.yourInvestment.trim() ? 'done' : 'needs'}
+        >
+          <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '10px' }}>
+            What it would cost them separately:
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '18px' }}>
+            {pricing.lineItems.map((l, i) => (
+              <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <span style={{ flex: 1, fontSize: '13px', color: 'var(--text-secondary)' }}>{l.label}</span>
+                <input
+                  className="form-input" style={{ width: '150px' }} placeholder="₹ 50,000"
+                  value={l.value}
+                  onChange={e => setPricing(p => ({
+                    ...p,
+                    lineItems: p.lineItems.map((x, xi) => (xi === i ? { ...x, value: e.target.value } : x)),
+                  }))}
+                />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Total value (all added up)</label>
+                <input className="form-input" placeholder="₹ 2,00,000" value={pricing.totalValue}
+                  onChange={e => setPricing(p => ({ ...p, totalValue: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Your actual price</label>
+                <input className="form-input" placeholder="₹ 75,000" value={pricing.yourInvestment}
+                  onChange={e => setPricing(p => ({ ...p, yourInvestment: e.target.value }))} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Your guarantee (optional — this is what closes deals)</label>
+              <input className="form-input"
+                placeholder="e.g. If the episode doesn't hit 500K views in 30 days, the next one is free."
+                value={pricing.riskReversal}
+                onChange={e => setPricing(p => ({ ...p, riskReversal: e.target.value }))} />
+            </div>
+          </div>
+        </StepCard>
+
+        {/* ---------- STEP 7: CONTACT ---------- */}
+        <StepCard
+          n={7}
+          title="How they contact you"
+          subtitle="The last slide. Without this, someone who likes your pitch has no idea what to do next."
+          state={(nextStep.bookingLink.trim() || nextStep.email.trim() || nextStep.phone.trim()) ? 'done' : 'needs'}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="form-group">
+              <label className="form-label">What should they do next?</label>
+              <input className="form-input" value={nextStep.headline}
+                onChange={e => setNextStep(p => ({ ...p, headline: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Booking link (Calendly, Google Calendar, etc.)</label>
+              <input className="form-input" placeholder="https://calendly.com/..." value={nextStep.bookingLink}
+                onChange={e => setNextStep(p => ({ ...p, bookingLink: e.target.value }))} />
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input className="form-input" placeholder="you@opengrey.media" value={nextStep.email}
+                  onChange={e => setNextStep(p => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Phone</label>
+                <input className="form-input" placeholder="+91 ..." value={nextStep.phone}
+                  onChange={e => setNextStep(p => ({ ...p, phone: e.target.value }))} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Limited availability line (optional — creates urgency)</label>
+              <input className="form-input" placeholder="e.g. We record 4 episodes a month. August has 2 slots left."
+                value={nextStep.scarcity}
+                onChange={e => setNextStep(p => ({ ...p, scarcity: e.target.value }))} />
+            </div>
+          </div>
         </StepCard>
 
         {/* ---------- CHECKLIST ---------- */}
