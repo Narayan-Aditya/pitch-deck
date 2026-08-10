@@ -23,13 +23,6 @@ export default function SettingsPage() {
     showToast('✅ Saved — every new report will use this.');
   };
 
-  const setProof = (i, field, value) => {
-    setS(prev => ({
-      ...prev,
-      proof: prev.proof.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)),
-    }));
-  };
-
   const setLine = (i, value) => {
     setS(prev => ({
       ...prev,
@@ -59,60 +52,6 @@ export default function SettingsPage() {
           Fill this in <strong>once</strong>. It gets added to every pitch deck you make from now on —
           you won't be asked for it again.
         </p>
-
-        {/* ---------- PROOF ---------- */}
-        <div className="report-section">
-          <div className="report-section-title"><span className="icon">🏆</span> Past Work (your proof)</div>
-          <p className="form-hint" style={{ marginTop: '-8px', marginBottom: '16px' }}>
-            The most convincing slide in the whole deck. Two brands you've worked with and what happened.
-            Real numbers beat adjectives — "2.4M views" lands, "great results" doesn't.
-          </p>
-          {s.proof.map((p, i) => (
-            <div key={i} className="card" style={{ marginBottom: '12px' }}>
-              <div style={{ fontWeight: '700', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '14px' }}>
-                Example {i + 1}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div className="form-group">
-                  <label className="form-label">Which brand?</label>
-                  <input className="form-input" placeholder="e.g. Palmonas" value={p.brand}
-                    onChange={e => setProof(i, 'brand', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">What did you do for them?</label>
-                  <input className="form-input" placeholder="e.g. 1 podcast episode + 20 reels" value={p.work}
-                    onChange={e => setProof(i, 'work', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">What was the result?</label>
-                  <input className="form-input" placeholder="e.g. 2.4M views, 18K new followers" value={p.result}
-                    onChange={e => setProof(i, 'result', e.target.value)} />
-                </div>
-              </div>
-            </div>
-          ))}
-
-          <div className="card">
-            <div style={{ fontWeight: '700', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '14px' }}>
-              Client quote (optional)
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div className="form-group">
-                <label className="form-label">What did they say?</label>
-                <textarea className="form-textarea" style={{ minHeight: '70px' }}
-                  placeholder="e.g. The episode sold out our launch in 6 days."
-                  value={s.testimonial.quote}
-                  onChange={e => setS(p => ({ ...p, testimonial: { ...p.testimonial, quote: e.target.value } }))} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Who said it?</label>
-                <input className="form-input" placeholder="e.g. Riya Sharma, Founder of Palmonas"
-                  value={s.testimonial.author}
-                  onChange={e => setS(p => ({ ...p, testimonial: { ...p.testimonial, author: e.target.value } }))} />
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* ---------- PRICING ---------- */}
         <div className="report-section">

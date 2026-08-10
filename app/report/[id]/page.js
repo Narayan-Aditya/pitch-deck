@@ -456,7 +456,7 @@ export default function ReportPage() {
 
   const videoReelPctPreview = Math.min(Math.max(toNum(ig.videoReelPct), 0), 100);
   const engagementPreview = computeEngagementRatePct(toNum(ig.followers), toNum(ig.avgLikes), toNum(ig.avgComments));
-  const comp = settings ? settingsCompleteness(settings) : { hasProof: false, hasPricing: false, hasNextStep: false };
+  const comp = settings ? settingsCompleteness(settings) : { hasPricing: false, hasNextStep: false };
 
   const aboutState = generatingOverview ? 'working' : (about.tagline && about.description) ? 'done' : 'needs';
   const igState = fetchingIg ? 'working' : toNum(ig.followers) ? 'done' : 'needs';
@@ -468,7 +468,6 @@ export default function ReportPage() {
     { label: 'Instagram numbers added', ok: igState === 'done' },
     { label: 'Instagram insight written', ok: insightState === 'done' },
     { label: 'Our related videos found', ok: creatorMatches.length > 0, optional: true },
-    { label: 'Your past work (Company Details)', ok: comp.hasProof, fixHref: '/settings' },
     { label: 'Your pricing (Company Details)', ok: comp.hasPricing, fixHref: '/settings', optional: true },
     { label: 'Your contact info (Company Details)', ok: comp.hasNextStep, fixHref: '/settings' },
   ];
