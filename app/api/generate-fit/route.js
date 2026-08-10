@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { generateAudienceFit } from '@/lib/openaiGenerate';
 
+// See generate-overview: 10s is the serverless default and a model call
+// exceeds it. 60s is the Hobby-plan maximum.
+export const maxDuration = 60;
+
 export async function POST(request) {
   try {
     const { brandName, about, analytics } = await request.json();

@@ -17,6 +17,12 @@ const TOTAL_BUDGET_BYTES = 400 * 1024;
 const MIN_VALID_BYTES = 2000;
 const FETCH_TIMEOUT_MS = 6000;
 
+// Four images, each of which may try three tiers at 6s — well past the 10s
+// serverless default. A timeout here is survivable (the caller falls back to
+// drawn tiles rather than failing the export), but 504-ing on every deck with
+// thumbnails would mean nobody ever sees a real one.
+export const maxDuration = 60;
+
 const cache = new Map(); // `${platform}:${id}:${tier}` -> { dataUrl, w, h, tier }
 
 const TIER_DIMS = {

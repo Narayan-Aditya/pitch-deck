@@ -5,6 +5,10 @@ import { rankCreatorContent } from '@/lib/openaiGenerate';
 
 const CANDIDATE_LIMIT = 12;
 
+// Stage 2 is a model call, so the 10s serverless default isn't enough. 60s is
+// the Hobby-plan maximum.
+export const maxDuration = 60;
+
 // Strips the heavy precomputed token Sets before anything leaves the server.
 function toWireItem(s) {
   const base = {
