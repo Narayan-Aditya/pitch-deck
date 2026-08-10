@@ -2,15 +2,50 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { listReports, deleteReport } from '@/lib/reportStore';
+import { useAuth } from '@/lib/AuthContext';
+import {
+  listReports, deleteReport, countLocalReports, importLocalReports,
+} from '@/lib/reportStore';
 
 export default function Dashboard() {
+  const { user, loading: authLoading } = useAuth();
   const [reports, setReports] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  // Reports made before sign-in existed are stranded in this browser. Offer to
+  // adopt them once, rather than letting them quietly disappear.
+  const [strandedCount, setStrandedCount] = useState(0);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
-    listReports().then(setReports).finally(() => setReportsLoading(false));
-  }, []);
+    if (authLoading || !user) return undefined;
+    let active = true;
+    listReports()
+      .then(r => { if (active) setReports(r); })
+      .catch(err => { if (active) setLoadError(err.message || 'Could not load your reports'); })
+      .finally(() => {
+        if (!active) return;
+        setReportsLoading(false);
+        // localStorage isn't readable during SSR, so this has to wait for the
+        // client; folding it in here keeps it out of the effect body.
+        setStrandedCount(countLocalReports());
+      });
+    return () => { active = false; };
+  }, [user, authLoading]);
+
+  const handleImport = async () => {
+    setImporting(true);
+    try {
+      await importLocalReports();
+      setStrandedCount(0);
+      setReports(await listReports());
+    } catch (err) {
+      setLoadError(err.message || 'Could not import those reports');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleDelete = (id, e) => {
     e.preventDefault();
@@ -45,7 +80,26 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {reportsLoading ? (
+        {strandedCount > 0 && (
+          <div className="card-glass" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <p style={{ fontSize: '13px', margin: 0, flex: 1, minWidth: '240px' }}>
+              <strong>{strandedCount} report{strandedCount === 1 ? '' : 's'} saved on this computer</strong> from
+              before sign-in existed. Move {strandedCount === 1 ? 'it' : 'them'} into your account and
+              {strandedCount === 1 ? ' it' : ' they'}&apos;ll show up on every device.
+            </p>
+            <button className="btn btn-secondary btn-sm" onClick={handleImport} disabled={importing}>
+              {importing ? <><div className="spinner" /> Moving…</> : 'Move to my account'}
+            </button>
+          </div>
+        )}
+
+        {loadError && (
+          <div className="card" style={{ borderColor: 'var(--error)', marginBottom: '24px' }}>
+            <p style={{ fontSize: '13px', color: 'var(--error)', margin: 0 }}>{loadError}</p>
+          </div>
+        )}
+
+        {authLoading || reportsLoading ? (
           <div style={{ textAlign: 'center', padding: '48px' }}>
             <div className="spinner" style={{ width: '32px', height: '32px', margin: '0 auto' }} />
           </div>

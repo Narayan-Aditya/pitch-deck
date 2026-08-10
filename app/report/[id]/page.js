@@ -6,6 +6,7 @@ import { extractHandle } from '@/lib/instagramHandle';
 import { getReport, updateReport } from '@/lib/reportStore';
 import { buildPitchDeckPptx } from '@/lib/buildPptx';
 import { hydrateCreatorThumbs } from '@/lib/creatorThumbs';
+import { logDeckEvent, DECK_DOWNLOADED } from '@/lib/usage';
 
 const EMPTY_NEXT_STEP = {
   headline: 'A 20-minute call to lock your episode date.',
@@ -466,6 +467,9 @@ export default function ReportPage() {
       a.download = `${report.brandName.replace(/\s+/g, '_')}_Pitch_Deck.pptx`;
       a.click();
       URL.revokeObjectURL(url);
+      // Logged here rather than on click, so a deck that failed to build is
+      // never counted as one that went to a client.
+      logDeckEvent(DECK_DOWNLOADED, report.id);
       showToast('✅ Downloaded! Check your Downloads folder.');
     } catch (err) {
       showToast(`❌ ${err.message || 'Download failed. Please try again.'}`, 'error');

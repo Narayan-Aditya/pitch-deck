@@ -6,19 +6,59 @@ Instagram numbers, the "what their numbers mean" paragraph, and which of the
 creator's past videos are relevant to that prospect — and you correct anything
 that looks wrong before hitting Download.
 
-There is no sign-in and no database. Reports are saved in the browser's
-localStorage, so **they belong to the browser that created them** and do not
-sync across devices or people. Clearing site data deletes them.
+Sign-in is Google via Supabase, and reports live in Postgres, so they follow a
+person to any device. Every report created and every deck downloaded is
+recorded, so `/admin` can show who on the team is actually shipping decks.
 
 ## Local development
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill in OPENAI_API_KEY
+cp .env.example .env.local   # OPENAI_API_KEY + the two Supabase vars
 npm run dev
 ```
 
 Open http://localhost:3000.
+
+## Supabase setup
+
+1. Create a project, then copy Project Settings → API → **Project URL** and the
+   **anon public** key into `.env.local`. Never the `service_role` key.
+2. Google Cloud → Credentials → OAuth client ID (Web). Authorized redirect URI:
+   `https://<your-ref>.supabase.co/auth/v1/callback`
+3. Supabase → Authentication → Providers → Google: paste the client ID/secret.
+   Under URL Configuration set the Site URL and add both
+   `http://localhost:3000/**` and your production URL as redirect URLs.
+4. Run `supabase/migrations/0001_init.sql` in the SQL editor. It is idempotent,
+   so re-running it after a schema change is safe.
+5. Make yourself an admin after your first login:
+   `update public.profiles set is_admin = true where email = 'you@example.com';`
+
+### Security model
+
+The browser talks to Postgres directly with the anon key, so **row level
+security is the access control** — not the UI, and not the API routes. Three
+things enforce it:
+
+- Every table has RLS on: you see your own rows, admins see everyone's.
+- `profiles` has **no update policy at all**. RLS cannot restrict individual
+  columns, so a policy permitting someone to edit their own row also permitted
+  setting `is_admin = true` and reading the whole team's data. That was a real
+  bug, caught by the script below. A trigger now blocks changes to that column
+  from the client as a second line of defence.
+- `proxy.js` refuses unauthenticated requests to `/api/*`, which is what stops
+  a stranger with the URL from spending the OpenAI budget or driving the
+  Instagram session.
+
+After changing any policy, run the checks:
+
+```bash
+node scripts/verify-rls.mjs
+```
+
+It signs up two throwaway accounts with the anon key and tries to read, edit
+and impersonate across them. A broken policy is silent — it returns rows rather
+than raising — so this is the only thing that will tell you.
 
 ## Deploying to Vercel
 

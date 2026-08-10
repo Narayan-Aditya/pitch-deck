@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { extractHandle } from '@/lib/instagramHandle';
 import { createReport } from '@/lib/reportStore';
+import { logDeckEvent, REPORT_CREATED } from '@/lib/usage';
 
 const initialForm = {
   brandName: '',
@@ -62,6 +63,9 @@ export default function NewReport() {
         instagram: form.instagram,
         reportData,
       });
+      // Not awaited: the report exists, so the navigation shouldn't wait on a
+      // stats row. logDeckEvent swallows its own failures.
+      logDeckEvent(REPORT_CREATED, id);
       router.push(`/report/${id}`);
     } catch (err) {
       setErrors({ brandName: err.message || 'Could not create report' });

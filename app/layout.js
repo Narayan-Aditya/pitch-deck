@@ -1,4 +1,6 @@
 import './globals.css';
+import { AuthProvider } from '@/lib/AuthContext';
+import AuthNav from './AuthNav';
 
 export const metadata = {
   title: 'Open Grey | Pitch Report Generator',
@@ -13,21 +15,23 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>
-        {/* Navbar */}
-        <nav className="navbar">
-          <a href="/" className="navbar-brand" style={{ textDecoration: 'none' }}>
-            <div className="navbar-logo">OG</div>
-            <div>
-              <div className="navbar-name">Open Grey</div>
-              <div className="navbar-sub">Reports</div>
-            </div>
-          </a>
-          <a href="/new-report" className="btn btn-primary btn-sm">
-            + New Report
-          </a>
-        </nav>
+        <AuthProvider>
+          {/* Navbar */}
+          <nav className="navbar">
+            <a href="/" className="navbar-brand" style={{ textDecoration: 'none' }}>
+              <div className="navbar-logo">OG</div>
+              <div>
+                <div className="navbar-name">Open Grey</div>
+                <div className="navbar-sub">Reports</div>
+              </div>
+            </a>
+            {/* Renders nothing while signed out, which is what the login page
+                wants — no "New Report" button for someone who can't use it. */}
+            <AuthNav />
+          </nav>
 
-        <main>{children}</main>
+          <main>{children}</main>
+        </AuthProvider>
       </body>
     </html>
   );
