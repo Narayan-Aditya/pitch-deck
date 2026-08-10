@@ -8,6 +8,7 @@ export default function AuthNav() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <a href="/settings" className="btn btn-ghost btn-sm">⚙️ Company Details</a>
       <a href="/new-report" className="btn btn-primary btn-sm">
         + New Report
       </a>
