@@ -50,13 +50,16 @@ export async function POST(request) {
   // Serverless hosts have no Python runtime and a read-only filesystem, so
   // the scraper can't run there at all. Say so in words the salesperson can
   // act on — the raw "spawn python ENOENT" that would otherwise surface on
-  // the report page means nothing to them, and the manual number fields
-  // sitting right below the error are the actual way forward.
+  // the report page means nothing to them.
+  //
+  // Phrased as a sentence fragment on purpose: the report page renders this
+  // inside "Couldn't do this automatically: {error} — fill it in below.", so
+  // anything self-contained ends up reading as a stutter.
   if (process.env.VERCEL) {
     return NextResponse.json(
       {
         success: false,
-        error: 'fetching live Instagram numbers only works when the app runs on your own computer — type them in below instead',
+        error: 'fetching live Instagram numbers only works when the app runs on your own computer',
       },
       { status: 501 }
     );
