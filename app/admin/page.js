@@ -60,8 +60,9 @@ export default function AdminPage() {
     (acc, r) => ({
       reports: acc.reports + (r.reports_created || 0),
       decks: acc.decks + (r.decks_downloaded || 0),
+      slides: acc.slides + (r.slides_exported || 0),
     }),
-    { reports: 0, decks: 0 }
+    { reports: 0, decks: 0, slides: 0 }
   );
 
   return (
@@ -91,6 +92,10 @@ export default function AdminPage() {
             <div className="metric-value">{totals.decks}</div>
             <div className="metric-label">Decks downloaded</div>
           </div>
+          <div className="metric-card">
+            <div className="metric-value">{totals.slides}</div>
+            <div className="metric-label">Sent to Google Slides</div>
+          </div>
         </div>
 
         {error && (
@@ -115,6 +120,7 @@ export default function AdminPage() {
                   <th style={{ textAlign: 'left', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Person</th>
                   <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Reports</th>
                   <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Decks</th>
+                  <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Slides</th>
                   <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Last active</th>
                 </tr>
               </thead>
@@ -143,6 +149,7 @@ export default function AdminPage() {
                     </td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600 }}>{r.reports_created}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600 }}>{r.decks_downloaded}</td>
+                    <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600 }}>{r.slides_exported ?? 0}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
                       {relativeTime(r.last_activity)}
                     </td>
@@ -156,6 +163,8 @@ export default function AdminPage() {
         <p className="form-hint" style={{ marginTop: '16px' }}>
           &ldquo;Reports&rdquo; is how many they started. &ldquo;Decks&rdquo; is how many .pptx files
           they actually downloaded — the gap between the two is work that never got sent.
+          &ldquo;Slides&rdquo; is the same deck pushed straight into Google Slides instead;
+          a report can be counted in both if it went out twice.
         </p>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { loadCreatorCorpus } from '@/lib/creatorCorpus';
+import { loadCreatorCorpus, toWireItem } from '@/lib/creatorCorpus';
 import { buildQueryProfile, rankCandidates, THRESHOLDS } from '@/lib/relevance';
 import { rankCreatorContent } from '@/lib/openaiGenerate';
 
@@ -9,35 +9,13 @@ const CANDIDATE_LIMIT = 12;
 // the Hobby-plan maximum.
 export const maxDuration = 60;
 
-// Strips the heavy precomputed token Sets before anything leaves the server.
-function toWireItem(s) {
-  const base = {
-    platform: s.platform,
-    id: s.id,
-    url: s.url,
-    publishedAt: s.publishedAt,
-    likes: s.likes,
-    comments: s.comments,
+// Wire shape plus the ranking fields only this route produces.
+function toRankedItem(s) {
+  return toWireItem(s, {
     score: s.score,
     tier: s.brandHit ? 'brand' : 'topical',
     matchedTerms: s.matchedTerms.slice(0, 5),
-  };
-  if (s.platform === 'youtube') {
-    return {
-      ...base,
-      title: s.title,
-      views: s.views,
-      durationLabel: s.durationLabel,
-      thumbW: s.thumbTiers?.high?.width ?? 480,
-      thumbH: s.thumbTiers?.high?.height ?? 360,
-    };
-  }
-  return {
-    ...base,
-    title: (s.captionHead || '').split('\n')[0].slice(0, 120),
-    hashtags: s.hashtags.slice(0, 3),
-    isReel: s.isReel,
-  };
+  });
 }
 
 export async function POST(request) {
@@ -120,7 +98,7 @@ export async function POST(request) {
           // framing isn't obvious, so the model's judgement gates every item
           // that actually names the prospect.
           if (c.brandHit && p.sentiment === 'negative') return null;
-          return { ...toWireItem(c), relevance: p.relevance, reason: p.reason };
+          return { ...toRankedItem(c), relevance: p.relevance, reason: p.reason };
         })
         .filter(Boolean)
         .slice(0, limit);
@@ -131,7 +109,7 @@ export async function POST(request) {
         .filter(c => !c.sentimentRisk)
         .filter(c => c.brandHit || c.score >= THRESHOLDS.DEGRADED_FLOOR)
         .slice(0, limit)
-        .map(c => ({ ...toWireItem(c), relevance: 'adjacent', reason: '' }));
+        .map(c => ({ ...toRankedItem(c), relevance: 'adjacent', reason: '' }));
     }
 
     if (matches.length < THRESHOLDS.MIN_ITEMS && !matches.some(m => m.tier === 'brand')) {
