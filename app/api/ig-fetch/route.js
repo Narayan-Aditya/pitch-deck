@@ -6,8 +6,9 @@ import { scrapeInstagram } from '@/lib/instagramScrape';
 // rejected outright rather than escaped.
 const HANDLE_RE = /^[A-Za-z0-9._]{1,30}$/;
 
-// Three sequential requests to instagram.com, which is not fast. Comfortably
-// inside 60s, but well past the 10s serverless default.
+// browse2api's own docs say a call typically completes in 20-60s. Comfortably
+// inside 60s on average, but well past the 10s serverless default, so this
+// still needs the bump.
 export const maxDuration = 60;
 
 export async function POST(request) {

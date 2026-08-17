@@ -79,16 +79,15 @@ by hand. See `.env.example` for the optional ones.
 
 ### Instagram numbers once deployed
 
-`/api/ig-fetch` is plain HTTP against Instagram's own endpoints (`lib/instagramScrape.js`),
-so it works on Vercel — but only if **`IG_SESSIONID` is set in Project Settings
-→ Environment Variables.** Without it every lookup fails with "no Instagram
-login is saved on the server" and the numbers have to be typed in by hand.
+`/api/ig-fetch` calls browse2api's hosted Instagram Profile & Posts API
+(`lib/instagramScrape.js`), so it works on Vercel — but only if
+**`BROWSE2API_KEY` is set in Project Settings → Environment Variables.**
+Without it every lookup fails with "no Instagram API key is saved on the
+server" and the numbers have to be typed in by hand.
 
 Opening a report with no numbers on it fires that lookup automatically, once.
-Re-opening a report that already has numbers does not: each lookup spends four
-requests against a real logged-in account, and `lib/instagramScrape.js` carries
-a ten-minute throttle circuit-breaker for when Instagram starts pushing back.
-"↻ Get latest" is the manual re-fetch.
+Re-opening a report that already has numbers does not. "↻ Get latest" is the
+manual re-fetch.
 
 One thing genuinely does not survive the deploy, and it is not a bug:
 
@@ -123,7 +122,7 @@ otherwise 504 in production while working fine locally.
 | `lib/openaiGenerate.js` | All four generation calls |
 | `lib/relevance.js`, `lib/creatorCorpus.js` | Scores the creator's back catalogue against the prospect |
 | `app/api/creator-library/route.js` | Search that catalogue by hand, for the picker in step 5 |
-| `lib/instagramScrape.js` | Live Instagram lookup over HTTP — works deployed |
+| `lib/instagramScrape.js` | Live Instagram lookup via browse2api — works deployed |
 | `lib/creatorStats.js` | **Generated.** The creator's own numbers and collab list |
 | `scripts/build-creator-stats.mjs` | Regenerates the above from `nitin josi data/` |
 | `ig_data.py` | Bulk Instagram scraper — local only, writes `stats.json` |
