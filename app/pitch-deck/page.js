@@ -76,8 +76,24 @@ export default function PitchDeckPage() {
   const [brand, setBrand] = useState(null);
   const [igStats, setIgStats] = useState(null);
   const [igError, setIgError] = useState('');
+  // Seeded from the site's own link, but editable. The scraper finds whatever
+  // the footer points at, which on a multi-brand site is sometimes the parent
+  // company's account — and the lookup 502s often enough on its own that
+  // retyping a handle the page already knew was the most repeated action in
+  // the flow this replaces.
+  const [igHandle, setIgHandle] = useState('');
+  const [retryingIg, setRetryingIg] = useState(false);
   const [matches, setMatches] = useState([]);
   const [matchNote, setMatchNote] = useState('');
+
+  // Hand-picking from the back catalogue, for when the matcher's answer is not
+  // the one you had in mind. /api/creator-library returns the same wire shape
+  // as /api/creator-matches, so a search hit drops straight into `matches`.
+  const [libQuery, setLibQuery] = useState('');
+  const [libPlatform, setLibPlatform] = useState('');
+  const [libItems, setLibItems] = useState(null);
+  const [libTotal, setLibTotal] = useState(0);
+  const [libSearching, setLibSearching] = useState(false);
 
   const [offerType, setOfferType] = useState('both');
   const [reportId, setReportId] = useState(null);
@@ -87,11 +103,65 @@ export default function PitchDeckPage() {
 
   const mark = (key, state) => setSteps((s) => ({ ...s, [key]: state }));
 
+  /** One paid lookup. Shared by the run and the retry so there is one
+   * description of what a failure leaves behind. */
+  async function auditInstagram(handle) {
+    mark('instagram', 'active');
+    setIgError('');
+    try {
+      const res = await fetch('/api/ig-fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'the lookup failed');
+      setIgStats(data.stats);
+      mark('instagram', 'done');
+      return true;
+    } catch (err) {
+      setIgStats(null);
+      setIgError(err.message || 'the lookup failed');
+      mark('instagram', 'error');
+      return false;
+    }
+  }
+
+  async function retryInstagram() {
+    const handle = igHandle.trim().replace(/^@/, '');
+    if (!handle || retryingIg) return;
+    setRetryingIg(true);
+    await auditInstagram(handle);
+    setRetryingIg(false);
+  }
+
+  async function searchLibrary() {
+    if (libSearching) return;
+    setLibSearching(true);
+    try {
+      const params = new URLSearchParams({ q: libQuery.trim(), limit: '24' });
+      if (libPlatform) params.set('platform', libPlatform);
+      const res = await fetch(`/api/creator-library?${params}`);
+      const data = await res.json();
+      setLibItems(data.items || []);
+      setLibTotal(data.total || 0);
+    } catch {
+      setLibItems([]);
+      setLibTotal(0);
+    } finally {
+      setLibSearching(false);
+    }
+  }
+
+  const addMatch = (item) => setMatches((list) => (list.some((m) => m.id === item.id) ? list : [...list, item]));
+  const removeMatch = (id) => setMatches((list) => list.filter((m) => m.id !== id));
+
   async function run() {
     if (!url.trim() || running) return;
     setRunning(true);
     setError('');
-    setBrand(null); setIgStats(null); setIgError(''); setMatches([]); setMatchNote('');
+    setBrand(null); setIgStats(null); setIgError(''); setIgHandle(''); setMatches([]); setMatchNote('');
+    setLibItems(null); setLibQuery(''); setLibTotal(0);
     setReportId(null); setSlidesUrl(''); setNeedsDrive(false);
     setSteps({ site: 'active' });
 
@@ -119,24 +189,13 @@ export default function PitchDeckPage() {
     // 2 — their Instagram, if the site named one. This is the call that bills,
     // so it only runs when the site actually links an account.
     const handle = instagramHandleFrom(scraped);
+    // Filled before the call, not after it fails — that is what makes the
+    // retry below one click rather than a retype.
+    setIgHandle(handle || '');
     if (handle) {
-      mark('instagram', 'active');
-      try {
-        const res = await fetch('/api/ig-fetch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ handle }),
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'the lookup failed');
-        setIgStats(data.stats);
-        mark('instagram', 'done');
-      } catch (err) {
-        setIgError(err.message || 'the lookup failed');
-        mark('instagram', 'error');
-      }
+      await auditInstagram(handle);
     } else {
-      setIgError('their site does not link an Instagram account');
+      setIgError('their site does not link an Instagram account — type one below');
       mark('instagram', 'error');
     }
 
@@ -383,6 +442,31 @@ export default function PitchDeckPage() {
             ) : (
               <Row label="Instagram" value={`Not audited — ${igError}. The deck swaps in a brand portrait rather than dropping a slide.`} missing />
             )}
+
+            {/* Always available, not only after a failure: the site's own link
+                is sometimes the parent company's account, and swapping it is a
+                correction rather than a retry. */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <input
+                type="text"
+                className="input"
+                style={{ flex: '1 1 220px' }}
+                placeholder="@theirhandle"
+                value={igHandle}
+                onChange={(e) => setIgHandle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); retryInstagram(); } }}
+                disabled={retryingIg || running}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={retryInstagram}
+                disabled={retryingIg || running || !igHandle.trim()}
+              >
+                {retryingIg ? 'Looking up…' : igStats ? 'Look up a different account' : 'Try again'}
+              </button>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>costs one lookup</span>
+            </div>
           </div>
         )}
 
@@ -396,23 +480,103 @@ export default function PitchDeckPage() {
                 : 'Keep at least one, or the slide prints a placeholder line — it is part of the deck’s fixed spine, so it appears either way.'}
             </p>
             {matches.length ? (
-              matches.map((m) => (
-                <div key={m.id} style={{ display: 'flex', gap: '12px', padding: '9px 0', borderBottom: '1px solid var(--border)', alignItems: 'baseline' }}>
-                  <span style={{ flex: '0 0 74px', fontSize: '12px', color: 'var(--text-muted)' }}>{m.platform}</span>
-                  <span style={{ flex: 1, fontSize: '13px' }}>
-                    <a href={m.url} target="_blank" rel="noreferrer">{m.title || m.url}</a>
-                    <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
-                      {m.platform === 'youtube'
-                        ? `${compact(m.views)} views`
-                        : `${compact(m.likes)} likes · ${compact(m.comments)} comments`}
-                      {m.tier === 'brand' && ' · names this brand'}
+              matches.map((m, i) => {
+                // toContentMatches() takes the first three Instagram items and
+                // the first two YouTube ones. Anything past that stays in the
+                // list but never reaches a slide, so it says so rather than
+                // looking like it made the cut.
+                const before = matches.slice(0, i);
+                const used = m.platform === 'youtube'
+                  ? before.filter((x) => x.platform === 'youtube').length < 2
+                  : before.filter((x) => x.platform !== 'youtube').length < 3;
+                return (
+                  <div key={m.id} style={{ display: 'flex', gap: '12px', padding: '9px 0', borderBottom: '1px solid var(--border)', alignItems: 'baseline', opacity: used ? 1 : 0.5 }}>
+                    <span style={{ flex: '0 0 74px', fontSize: '12px', color: 'var(--text-muted)' }}>{m.platform}</span>
+                    <span style={{ flex: 1, fontSize: '13px' }}>
+                      <a href={m.url} target="_blank" rel="noreferrer">{m.title || m.url}</a>
+                      <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
+                        {m.platform === 'youtube'
+                          ? `${compact(m.views)} views`
+                          : `${compact(m.likes)} likes · ${compact(m.comments)} comments`}
+                        {m.tier === 'brand' && ' · names this brand'}
+                        {!used && ' · over the slide’s limit, not printed'}
+                      </span>
                     </span>
-                  </span>
-                </div>
-              ))
+                    <button type="button" onClick={() => removeMatch(m.id)}
+                      style={{ border: 0, background: 'none', padding: '2px 4px', fontSize: '12px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                      Remove
+                    </button>
+                  </div>
+                );
+              })
             ) : (
               <Row label="Matches" value={matchNote || 'None'} missing />
             )}
+
+            {/* ---- search the whole back catalogue ---- */}
+            <div style={{ marginTop: '20px', paddingTop: '18px', borderTop: '1px solid var(--border)' }}>
+              <h4 style={{ fontSize: '14px', marginBottom: '4px' }}>Search the library</h4>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                Every reel and episode in Nitin&rsquo;s archive. Plain word search over titles,
+                captions and hashtags, and every word has to appear. Leave it empty for our
+                best-performing content.
+              </p>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <input
+                  type="search"
+                  className="input"
+                  style={{ flex: '1 1 220px' }}
+                  placeholder="perfume, jewellery, D2C…"
+                  value={libQuery}
+                  onChange={(e) => setLibQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchLibrary(); } }}
+                />
+                <select className="input" style={{ flex: '0 0 130px' }} value={libPlatform} onChange={(e) => setLibPlatform(e.target.value)}>
+                  <option value="">Both</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="youtube">YouTube</option>
+                </select>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={searchLibrary} disabled={libSearching}>
+                  {libSearching ? 'Searching…' : 'Search'}
+                </button>
+              </div>
+
+              {libItems && (
+                <div style={{ marginTop: '14px' }}>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                    {libItems.length
+                      ? `Showing ${libItems.length} of ${libTotal}`
+                      : 'Nothing matched those words.'}
+                  </p>
+                  <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                    {libItems.map((item) => {
+                      const already = matches.some((m) => m.id === item.id);
+                      return (
+                        <div key={item.id} style={{ display: 'flex', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--border)', alignItems: 'baseline' }}>
+                          <span style={{ flex: '0 0 74px', fontSize: '12px', color: 'var(--text-muted)' }}>{item.platform}</span>
+                          <span style={{ flex: 1, fontSize: '13px' }}>
+                            <a href={item.url} target="_blank" rel="noreferrer">{item.title || item.url}</a>
+                            <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
+                              {item.platform === 'youtube'
+                                ? `${compact(item.views)} views`
+                                : `${compact(item.likes)} likes · ${compact(item.comments)} comments`}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => addMatch(item)}
+                            disabled={already}
+                          >
+                            {already ? 'Added' : 'Add'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
