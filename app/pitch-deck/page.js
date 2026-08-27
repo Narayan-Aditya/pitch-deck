@@ -8,6 +8,7 @@ import { createReport } from '@/lib/reportStore';
 import { logDeckEvent, DECK_DOWNLOADED, REPORT_CREATED, SLIDES_EXPORTED } from '@/lib/usage';
 import buildPitchDeck from '@/lib/deck/pitch/buildDeck';
 import { statsToAnalytics, toDeckArgs } from '@/lib/deckAdapter';
+import { CONTENT_CATEGORIES, categoryById, categoryForBrand } from '@/lib/deck/creatorCategories';
 
 // One URL in, a finished deck out.
 //
@@ -46,6 +47,31 @@ function instagramHandleFrom(brand) {
   if (!url) return null;
   const match = url.match(/instagram\.com\/([\w.]+)/);
   return match ? match[1] : null;
+}
+
+/** A curated category pick in the wire shape the rest of this page speaks.
+ *
+ * `curatedBrand` is the field that earns its keep. The track-record slide reads
+ * it in place of a caption, so a curated pick prints "Lenskart" where the
+ * keyword matcher would print the first seventy characters of a reel caption —
+ * on a slide headed "Brands We've Worked With", that is the whole difference.
+ *
+ * tier is 'brand' by construction: somebody chose this pick *because* it names
+ * the brand, which is exactly what that flag means everywhere else. */
+function itemFromPick(pick) {
+  return {
+    id: pick.url,
+    platform: pick.platform,
+    url: pick.url,
+    title: pick.title,
+    likes: pick.likes ?? null,
+    comments: pick.comments ?? null,
+    views: pick.views ?? null,
+    publishedAt: pick.date || null,
+    curatedBrand: pick.brand,
+    curatedNote: pick.note,
+    tier: 'brand',
+  };
 }
 
 function fileSlug(name) {
@@ -94,6 +120,12 @@ export default function PitchDeckPage() {
   const [libItems, setLibItems] = useState(null);
   const [libTotal, setLibTotal] = useState(0);
   const [libSearching, setLibSearching] = useState(false);
+  // The curated shelves — 13 categories of hand-chosen collabs and episodes,
+  // each pick carrying the brand it is about. Seeded from the scrape when the
+  // brand's own words give it away, but always overridable: the guess reads
+  // one page of copy, and the person reading the prospect's whole site knows
+  // better.
+  const [categoryId, setCategoryId] = useState('');
 
   const [offerType, setOfferType] = useState('both');
   const [reportId, setReportId] = useState(null);
@@ -153,6 +185,30 @@ export default function PitchDeckPage() {
     }
   }
 
+  /** Show a category's picks in the results list. No fetch — these are
+   * compiled into the bundle, not searched for. */
+  function chooseCategory(id) {
+    setCategoryId(id);
+    const category = id ? categoryById(id) : null;
+    if (!category) {
+      setLibItems(null);
+      setLibTotal(0);
+      return;
+    }
+    const items = category.picks.map(itemFromPick);
+    setLibItems(items);
+    setLibTotal(items.length);
+  }
+
+  /** Take the whole shelf. Replaces the selection rather than appending to it:
+   * choosing a category is a decision about what this deck should prove, and
+   * leaving the keyword matcher's guesses underneath would mix two answers. */
+  function applyCategory() {
+    const category = categoryId ? categoryById(categoryId) : null;
+    if (!category) return;
+    setMatches(category.picks.map(itemFromPick));
+  }
+
   const addMatch = (item) => setMatches((list) => (list.some((m) => m.id === item.id) ? list : [...list, item]));
   const removeMatch = (id) => setMatches((list) => list.filter((m) => m.id !== id));
 
@@ -161,7 +217,7 @@ export default function PitchDeckPage() {
     setRunning(true);
     setError('');
     setBrand(null); setIgStats(null); setIgError(''); setIgHandle(''); setMatches([]); setMatchNote('');
-    setLibItems(null); setLibQuery(''); setLibTotal(0);
+    setLibItems(null); setLibQuery(''); setLibTotal(0); setCategoryId('');
     setReportId(null); setSlidesUrl(''); setNeedsDrive(false);
     setSteps({ site: 'active' });
 
@@ -178,6 +234,10 @@ export default function PitchDeckPage() {
       if (!data.success) throw new Error(data.error || 'Could not read that site.');
       scraped = data.brand;
       setBrand(scraped);
+      // Guessed from the brand's own description and About copy. Returns null
+      // rather than picking something when nothing matches, which leaves the
+      // dropdown on "no category" and the keyword matcher in charge.
+      setCategoryId(categoryForBrand(scraped)?.id || '');
       mark('site', 'done');
     } catch (err) {
       mark('site', 'error');
@@ -493,12 +553,13 @@ export default function PitchDeckPage() {
                   <div key={m.id} style={{ display: 'flex', gap: '12px', padding: '9px 0', borderBottom: '1px solid var(--border)', alignItems: 'baseline', opacity: used ? 1 : 0.5 }}>
                     <span style={{ flex: '0 0 74px', fontSize: '12px', color: 'var(--text-muted)' }}>{m.platform}</span>
                     <span style={{ flex: 1, fontSize: '13px' }}>
+                      {m.curatedBrand && <strong style={{ marginRight: '6px' }}>{m.curatedBrand} ·</strong>}
                       <a href={m.url} target="_blank" rel="noreferrer">{m.title || m.url}</a>
                       <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
                         {m.platform === 'youtube'
                           ? `${compact(m.views)} views`
                           : `${compact(m.likes)} likes · ${compact(m.comments)} comments`}
-                        {m.tier === 'brand' && ' · names this brand'}
+                        {m.curatedBrand ? ' · category pick' : m.tier === 'brand' && ' · names this brand'}
                         {!used && ' · over the slide’s limit, not printed'}
                       </span>
                     </span>
@@ -521,6 +582,34 @@ export default function PitchDeckPage() {
                 captions and hashtags, and every word has to appear. Leave it empty for our
                 best-performing content.
               </p>
+              {/* Curated shelves first: a hand-picked collab beats anything a
+                  word search can surface, because someone already decided it
+                  was worth showing a prospect. */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px', alignItems: 'center' }}>
+                <select
+                  className="input"
+                  style={{ flex: '1 1 260px' }}
+                  value={categoryId}
+                  onChange={(e) => chooseCategory(e.target.value)}
+                >
+                  <option value="">No category — use the keyword match</option>
+                  {CONTENT_CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.picks.length})</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={applyCategory}
+                  disabled={!categoryId}
+                >
+                  Use this category
+                </button>
+                {categoryId && categoryId === categoryForBrand(brand)?.id && (
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>guessed from their site</span>
+                )}
+              </div>
+
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <input
                   type="search"
@@ -555,11 +644,15 @@ export default function PitchDeckPage() {
                         <div key={item.id} style={{ display: 'flex', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--border)', alignItems: 'baseline' }}>
                           <span style={{ flex: '0 0 74px', fontSize: '12px', color: 'var(--text-muted)' }}>{item.platform}</span>
                           <span style={{ flex: 1, fontSize: '13px' }}>
+                            {item.curatedBrand && (
+                              <strong style={{ marginRight: '6px' }}>{item.curatedBrand} ·</strong>
+                            )}
                             <a href={item.url} target="_blank" rel="noreferrer">{item.title || item.url}</a>
                             <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
                               {item.platform === 'youtube'
                                 ? `${compact(item.views)} views`
                                 : `${compact(item.likes)} likes · ${compact(item.comments)} comments`}
+                              {item.curatedNote && ` · ${item.curatedNote}`}
                             </span>
                           </span>
                           <button
