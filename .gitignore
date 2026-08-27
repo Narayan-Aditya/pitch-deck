@@ -58,3 +58,6 @@ next-env.d.ts
 
 # Decks the layout audit writes so a finding can be opened in PowerPoint.
 .deck-audit/
+
+# One-off patch scripts.
+_patch.py
