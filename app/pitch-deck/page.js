@@ -498,6 +498,15 @@ export default function PitchDeckPage() {
                 <Row label="Reels / video" value={igStats.video_reel_pct != null ? `${igStats.video_reel_pct}%` : '—'} />
                 <Row label="Posts per week" value={igStats.posts_per_week ?? '—'} />
                 <Row label="Sampled" value={`${igStats.sampled_post_count} recent posts`} />
+                {/* Which backend answered. The two do not agree on every field,
+                    so "the numbers changed" is easier to explain when the page
+                    can say the source changed too. */}
+                <Row
+                  label="Source"
+                  value={igStats.source === 'apify'
+                    ? 'Apify — the fallback, because browse2api could not answer'
+                    : 'browse2api'}
+                />
               </>
             ) : (
               <Row label="Instagram" value={`Not audited — ${igError}. The deck swaps in a brand portrait rather than dropping a slide.`} missing />
