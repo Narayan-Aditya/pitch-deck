@@ -42,11 +42,13 @@ export default function AuthNav() {
         </span>
       )}
 
+      <Link href="/history" className="btn btn-ghost btn-sm">History</Link>
+
       {profile?.is_admin && (
         <Link href="/admin" className="btn btn-ghost btn-sm">Team usage</Link>
       )}
 
-      <Link href="/new-report" className="btn btn-primary btn-sm">+ New Report</Link>
+      <Link href="/pitch-deck" className="btn btn-primary btn-sm">+ New Deck</Link>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         {avatar && (
