@@ -9,6 +9,7 @@ import { logDeckEvent, DECK_DOWNLOADED, REPORT_CREATED, SLIDES_EXPORTED } from '
 import buildPitchDeck from '@/lib/deck/pitch/buildDeck';
 import { statsToAnalytics, toDeckArgs } from '@/lib/deckAdapter';
 import { CONTENT_CATEGORIES, categoryById, categoryForBrand } from '@/lib/deck/creatorCategories';
+import { OFFER_KINDS, offerSlideCount, offerTypeFor } from '@/lib/deck/openGreyOffer';
 
 // One URL in, a finished deck out.
 //
@@ -26,12 +27,6 @@ const STEPS = [
   { key: 'site', label: 'Website' },
   { key: 'instagram', label: 'Instagram' },
   { key: 'matches', label: 'Our content' },
-];
-
-const OFFERS = [
-  ['both', 'Podcast + influencer marketing', 11],
-  ['podcast', 'Podcast only', 10],
-  ['marketing', 'Influencer marketing only', 10],
 ];
 
 const compact = (n) => {
@@ -72,6 +67,15 @@ function itemFromPick(pick) {
     curatedNote: pick.note,
     tier: 'brand',
   };
+}
+
+/** Nine slides are unconditional — the Instagram audit and the brand portrait
+ * are alternatives, so that pair is always exactly one — and each selected
+ * offer kind adds its own. Derived rather than written as "11", because
+ * dropping an offer kind now drops a slide and a count that says eleven while
+ * nine come out is the kind of small lie nobody checks. */
+function slideCountFor(offerType) {
+  return 9 + offerSlideCount(offerType);
 }
 
 function fileSlug(name) {
@@ -128,7 +132,11 @@ export default function PitchDeckPage() {
   // better.
   const [categoryId, setCategoryId] = useState('');
 
-  const [offerType, setOfferType] = useState('both');
+  // The selection is the set of kinds; the offer type is derived from it.
+  const [offerKinds, setOfferKinds] = useState(OFFER_KINDS.map((k) => k.key));
+  const offerType = offerTypeFor(offerKinds);
+  const toggleOfferKind = (key) =>
+    setOfferKinds((kinds) => (kinds.includes(key) ? kinds.filter((k) => k !== key) : [...kinds, key]));
   const [reportId, setReportId] = useState(null);
   const [busy, setBusy] = useState('');
   const [slidesUrl, setSlidesUrl] = useState('');
@@ -389,7 +397,7 @@ export default function PitchDeckPage() {
 
   const colour = brand?.visual_identity?.palette?.primary;
   const socials = Object.entries(brand?.social_links || {});
-  const slideCount = offerType === 'both' ? 11 : 10;
+  const slideCount = slideCountFor(offerType);
 
   return (
     <div className="page" style={{ padding: '32px 0 120px' }}>
@@ -720,18 +728,34 @@ export default function PitchDeckPage() {
             <p style={{ fontSize: '13px', marginBottom: '12px' }}>
               Only the half being offered goes in the file.
             </p>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
-              {OFFERS.map(([value, label, slides]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setOfferType(value)}
-                  className={offerType === value ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                >
-                  {label} · {slides} slides
-                </button>
-              ))}
+            {/* Two toggles, not a list of the four combinations. The deck's own
+                model is a set of offer kinds — offerTypeFor() derives
+                "both/podcast/marketing/none" from it — and the fourth state is
+                only reachable this way: turning both off is a choice somebody
+                can make, and a row of mutually exclusive buttons quietly made
+                it impossible. */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+              {OFFER_KINDS.map((kind) => {
+                const on = offerKinds.includes(kind.key);
+                return (
+                  <button
+                    key={kind.key}
+                    type="button"
+                    onClick={() => toggleOfferKind(kind.key)}
+                    aria-pressed={on}
+                    className={on ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                    title={`${kind.full} — ${on ? 'remove' : 'add'} its slide`}
+                  >
+                    {on ? '✓ ' : ''}{kind.full}
+                  </button>
+                );
+              })}
             </div>
+            <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+              {offerType === 'none'
+                ? 'Neither offer slide. The deck still opens, makes the case and closes — 9 slides of shared argument, for a first conversation that is not yet a pitch.'
+                : `${slideCount} slides.`}
+            </p>
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <button type="button" className="btn btn-primary" onClick={exportToSlides} disabled={Boolean(busy)}>

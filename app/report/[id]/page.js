@@ -6,6 +6,7 @@ import { extractHandle } from '@/lib/instagramHandle';
 import { getReport, updateReport } from '@/lib/reportStore';
 import buildPitchDeck from '@/lib/deck/pitch/buildDeck';
 import { toDeckArgs } from '@/lib/deckAdapter';
+import { OFFER_KINDS, offerSlideCount, offerTypeFor } from '@/lib/deck/openGreyOffer';
 import { logDeckEvent, DECK_DOWNLOADED, SLIDES_EXPORTED } from '@/lib/usage';
 import { useAuth, getDriveToken, forgetDriveToken } from '@/lib/AuthContext';
 import { uploadPptxAsGoogleSlides, DriveAuthError } from '@/lib/googleSlides';
@@ -344,6 +345,12 @@ function CreatorLibraryPicker({ taken, atCapacity, onAdd }) {
 // subtitle, accent rule — drawn from the same tokens buildPptx.js paints with.
 // Colour swatches alone don't tell you that Minimal has no header bar or that
 
+/** `offerIncludes` under another name, kept local so the load path reads as
+ * the inverse of offerTypeFor() rather than as a slide-rendering concern. */
+function offerIncludesKind(offerType, key) {
+  return offerType === 'both' || offerType === key;
+}
+
 export default function ReportPage() {
   const params = useParams();
   const router = useRouter();
@@ -373,7 +380,10 @@ export default function ReportPage() {
   // influencer price ladder and the podcast pre-production page. Printing both
   // unconditionally used to put a price list for a service the prospect had not
   // been offered into every podcast deck.
-  const [offerType, setOfferType] = useState('both');
+  const [offerKinds, setOfferKinds] = useState(OFFER_KINDS.map((k) => k.key));
+  const offerType = offerTypeFor(offerKinds);
+  const toggleOfferKind = (key) =>
+    setOfferKinds((kinds) => (kinds.includes(key) ? kinds.filter((k) => k !== key) : [...kinds, key]));
   const [brandCollabs, setBrandCollabs] = useState(EMPTY_BRAND_COLLABS);
   // Instagram bio/category — grounds the brand summary so it doesn't need a
   // paid web search. `profileResolved` gates the auto-generate below: firing
@@ -436,7 +446,8 @@ export default function ReportPage() {
       setSlidesLink(rd.slidesLink || '');
       setBrandUrl(rd.brandUrl || '');
       setBrand(rd.brand || null);
-      setOfferType(rd.offerType || 'both');
+      // Stored as the derived type, so it has to be turned back into the set.
+      setOfferKinds(OFFER_KINDS.filter((k) => offerIncludesKind(rd.offerType || 'both', k.key)).map((k) => k.key));
       if (rd.igProfile) setIgProfile(rd.igProfile);
       setNextStep({ ...EMPTY_NEXT_STEP, ...rd.nextStep });
       const savedIg = rd.instagramAnalytics || {};
@@ -1042,22 +1053,32 @@ export default function ReportPage() {
             Only the half being offered goes in the file — an influencer price ladder in a
             podcast-only deck is a price list for something the prospect was never offered.
           </p>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {[
-              ['both', 'Podcast + influencer marketing', 11],
-              ['podcast', 'Podcast only', 10],
-              ['marketing', 'Influencer marketing only', 10],
-            ].map(([value, label, slides]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setOfferType(value)}
-                className={offerType === value ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-              >
-                {label} · {slides} slides
-              </button>
-            ))}
-          </div>
+            {/* Two toggles, not a list of the four combinations. The deck's own
+                model is a set of offer kinds — offerTypeFor() derives
+                "both/podcast/marketing/none" from it — and the fourth state is
+                only reachable this way: turning both off is a choice somebody
+                can make, and a row of mutually exclusive buttons quietly made
+                it impossible. */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {OFFER_KINDS.map((kind) => {
+                const on = offerKinds.includes(kind.key);
+                return (
+                  <button
+                    key={kind.key}
+                    type="button"
+                    onClick={() => toggleOfferKind(kind.key)}
+                    aria-pressed={on}
+                    className={on ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                    title={`${kind.full} — ${on ? 'remove' : 'add'} its slide`}
+                  >
+                    {on ? '✓ ' : ''}{kind.full}
+                  </button>
+                );
+              })}
+              <span style={{ fontSize: '13px', color: 'var(--text-muted)', alignSelf: 'center' }}>
+                {9 + offerSlideCount(offerType)} slides
+              </span>
+            </div>
         </div>
 
         {/* ---------- STEP 1 ---------- */}
@@ -1471,7 +1492,7 @@ export default function ReportPage() {
           <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             {readyCount} of {checklist.length} ready
             <span style={{ margin: '0 8px' }}>·</span>
-            {offerType === 'both' ? 11 : offerType === 'none' ? 9 : 10} slides
+            {9 + offerSlideCount(offerType)} slides
             {slidesLink && (
               <>
                 <span style={{ margin: '0 8px' }}>·</span>
