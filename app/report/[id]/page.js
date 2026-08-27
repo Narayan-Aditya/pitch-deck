@@ -4,12 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { extractHandle } from '@/lib/instagramHandle';
 import { getReport, updateReport } from '@/lib/reportStore';
-import { buildPitchDeckPptx } from '@/lib/buildPptx';
+import buildPitchDeck from '@/lib/deck/pitch/buildDeck';
+import { toDeckArgs } from '@/lib/deckAdapter';
 import { logDeckEvent, DECK_DOWNLOADED, SLIDES_EXPORTED } from '@/lib/usage';
 import { useAuth, getDriveToken, forgetDriveToken } from '@/lib/AuthContext';
 import { uploadPptxAsGoogleSlides, DriveAuthError } from '@/lib/googleSlides';
 import { CREATOR_IG_COLLABS, CREATOR_YT_BRAND_EPISODES, CREATOR_COLLAB_DEFAULTS } from '@/lib/creatorStats';
-import { DECK_STYLES, STYLE_KEYS, DEFAULT_STYLE } from '@/lib/deckStyles';
 
 // Only used for the small preview images in this editor — the deck itself
 // carries no thumbnails. Hand-added entries have a synthetic id, so the real
@@ -343,55 +343,6 @@ function CreatorLibraryPicker({ taken, atCapacity, onAdd }) {
 // A miniature of what the style actually produces — header bar, headline,
 // subtitle, accent rule — drawn from the same tokens buildPptx.js paints with.
 // Colour swatches alone don't tell you that Minimal has no header bar or that
-// Bold's is a thick block.
-function StyleThumb({ style }) {
-  const bar = Math.round(style.headerBarH * 26);   // 0.07in→2px, 0.30in→8px
-  return (
-    <div style={{
-      background: `#${style.bg}`, border: '1px solid var(--border)',
-      borderRadius: '3px', overflow: 'hidden', width: '100%', height: '54px',
-    }}>
-      {bar > 0 && <div style={{ height: `${bar}px`, background: `#${style.accent}` }} />}
-      <div style={{ padding: '7px 8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-        <div style={{ width: '70%', height: '7px', background: `#${style.textMain}`, borderRadius: '1px' }} />
-        <div style={{ width: '45%', height: '4px', background: `#${style.textMuted}`, borderRadius: '1px' }} />
-        <div style={{ width: '22px', height: '4px', background: `#${style.brandColor}`, borderRadius: '1px' }} />
-      </div>
-    </div>
-  );
-}
-
-function StylePicker({ value, onChange }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-      {STYLE_KEYS.map(key => {
-        const style = DECK_STYLES[key];
-        const selected = key === value;
-        return (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            aria-pressed={selected}
-            style={{
-              textAlign: 'left', cursor: 'pointer', padding: '8px',
-              background: selected ? 'var(--accent-soft, var(--bg-secondary))' : 'transparent',
-              border: `2px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
-              borderRadius: 'var(--radius-md)', font: 'inherit',
-            }}
-          >
-            <StyleThumb style={style} />
-            <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '8px' }}>
-              {selected ? '✓ ' : ''}{style.label}
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.35, marginTop: '2px' }}>
-              {style.blurb}
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export default function ReportPage() {
   const params = useParams();
@@ -412,8 +363,18 @@ export default function ReportPage() {
   const [instagramInsight, setInstagramInsight] = useState('');
   const [audienceFit, setAudienceFit] = useState('');
   const [creatorMatches, setCreatorMatches] = useState([]);
+  // The prospect's own website, and what was read off it. `brand` is the whole
+  // /api/brand response: the deck grounds its palette on the colour in there,
+  // and the cover, reach line and closing ask all print the scraped name.
+  const [brandUrl, setBrandUrl] = useState('');
+  const [brand, setBrand] = useState(null);
+  const [scrapingBrand, setScrapingBrand] = useState(false);
+  // Which half of the offer is being pitched. It decides two slides: the
+  // influencer price ladder and the podcast pre-production page. Printing both
+  // unconditionally used to put a price list for a service the prospect had not
+  // been offered into every podcast deck.
+  const [offerType, setOfferType] = useState('both');
   const [brandCollabs, setBrandCollabs] = useState(EMPTY_BRAND_COLLABS);
-  const [deckStyle, setDeckStyle] = useState(DEFAULT_STYLE);
   // Instagram bio/category — grounds the brand summary so it doesn't need a
   // paid web search. `profileResolved` gates the auto-generate below: firing
   // the overview before this lands would waste the grounding entirely.
@@ -472,10 +433,10 @@ export default function ReportPage() {
       setBrandCollabs(rd.brandCollabs
         ? { ...EMPTY_BRAND_COLLABS, ...rd.brandCollabs }
         : seedBrandCollabs());
-      // Reports made before styles existed have no key, and classic is what
-      // they were built in.
-      setDeckStyle(DECK_STYLES[rd.deckStyle] ? rd.deckStyle : DEFAULT_STYLE);
       setSlidesLink(rd.slidesLink || '');
+      setBrandUrl(rd.brandUrl || '');
+      setBrand(rd.brand || null);
+      setOfferType(rd.offerType || 'both');
       if (rd.igProfile) setIgProfile(rd.igProfile);
       setNextStep({ ...EMPTY_NEXT_STEP, ...rd.nextStep });
       const savedIg = rd.instagramAnalytics || {};
@@ -511,10 +472,12 @@ export default function ReportPage() {
       audienceFit,
       creatorMatches,
       brandCollabs,
-      deckStyle,
       slidesLink,
       nextStep,
       igProfile,
+      brandUrl,
+      brand,
+      offerType,
       instagramAnalytics: {
         handle: ig.handle || extractHandle(report.instagram),
         followers,
@@ -550,7 +513,7 @@ export default function ReportPage() {
     }, 900);
     return () => clearTimeout(saveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [about, ig, instagramInsight, audienceFit, creatorMatches, brandCollabs, deckStyle, slidesLink, nextStep, igProfile]);
+  }, [about, ig, instagramInsight, audienceFit, creatorMatches, brandCollabs, slidesLink, nextStep, igProfile, brandUrl, brand, offerType]);
 
   // ---------- auto-fill Instagram numbers from a previous scrape ----------
   useEffect(() => {
@@ -853,11 +816,46 @@ export default function ReportPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report, audienceFit, about.description]);
 
+  // ---------- the prospect's website ----------
+  // Everything the deck knows about the brand beyond its name comes from here:
+  // the palette's ground colour, the platform and channel counts on the
+  // portrait slide, and the About copy the creator-content matcher scores
+  // against. A report with no scrape still exports — it just prints "Your
+  // Brand" on three slides, which is worth a warning rather than a block.
+  const handleScrapeBrand = async () => {
+    const url = brandUrl.trim();
+    if (!url || scrapingBrand) return;
+    setScrapingBrand(true);
+    try {
+      const res = await fetch('/api/brand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Could not read that site.');
+      setBrand(data.brand);
+      const colour = data.brand?.visual_identity?.palette?.primary;
+      showToast(
+        colour
+          ? `✅ Read ${data.brand.name || url} — brand colour ${colour}.`
+          : `✅ Read ${data.brand.name || url}. No brand colour found; the deck will pick one from the domain.`
+      );
+    } catch (err) {
+      showToast(`❌ ${err.message || 'Could not read that site.'}`, 'error');
+    } finally {
+      setScrapingBrand(false);
+    }
+  };
+
   // ---------- export ----------
   const handleExportPitchDeck = async () => {
     setExportingPitch(true);
     try {
-      const blob = await buildPitchDeckPptx(buildReportData(), report.brandName);
+      const pptx = buildPitchDeck(
+        toDeckArgs({ report, reportData: buildReportData(), brand, offerType })
+      );
+      const blob = await pptx.write({ outputType: 'blob' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -885,7 +883,10 @@ export default function ReportPage() {
       const token = getDriveToken();
       if (!token) throw new DriveAuthError('no Google Drive permission yet');
 
-      const blob = await buildPitchDeckPptx(buildReportData(), report.brandName);
+      const pptx = buildPitchDeck(
+        toDeckArgs({ report, reportData: buildReportData(), brand, offerType })
+      );
+      const blob = await pptx.write({ outputType: 'blob' });
       const { url } = await uploadPptxAsGoogleSlides(
         token, blob, `${report.brandName} — Open Grey Media Pitch`
       );
@@ -1343,14 +1344,79 @@ export default function ReportPage() {
           </div>
         </StepCard>
 
-        {/* ---------- DECK STYLE ---------- */}
+        {/* ---------- THE PROSPECT'S SITE, AND WHAT WE'RE PITCHING ---------- */}
+        {/* This replaced the deck-style picker. The deck no longer has styles to
+            choose between: it reads the brand's own colour off their site and
+            picks a ground to match, so a chooser here would only let someone
+            override the one thing that makes each deck look like the prospect. */}
         <div className="card" style={{ marginBottom: '20px' }}>
-          <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>Deck style</h3>
+          <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>Their website</h3>
           <p style={{ fontSize: '13px', marginBottom: '16px' }}>
-            Same slides and the same numbers — only the colours and type change. Saved with
-            this report, so you can send different prospects a different look.
+            Reads their brand colour, social channels and About copy. The deck&rsquo;s
+            palette is chosen from that colour, so a prospect with no scrape gets a
+            ground picked from their domain instead.
           </p>
-          <StylePicker value={deckStyle} onChange={setDeckStyle} />
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <input
+              type="url"
+              className="input"
+              style={{ flex: '1 1 280px' }}
+              placeholder="https://example-brand.com"
+              value={brandUrl}
+              onChange={(e) => setBrandUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleScrapeBrand(); } }}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleScrapeBrand}
+              disabled={scrapingBrand || !brandUrl.trim()}
+            >
+              {scrapingBrand ? 'Reading…' : brand ? 'Read again' : 'Read site'}
+            </button>
+          </div>
+
+          {brand && (
+            <div style={{ marginTop: '14px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+              <strong>{brand.name || 'Unnamed'}</strong>
+              {brand.platform && brand.platform !== 'unknown' && ` · ${brand.platform}`}
+              {` · ${Object.keys(brand.social_links || {}).length} channels`}
+              {brand.visual_identity?.palette?.primary && (
+                <>
+                  {' · '}
+                  <span style={{
+                    display: 'inline-block', width: '10px', height: '10px',
+                    borderRadius: '2px', verticalAlign: 'middle',
+                    background: brand.visual_identity.palette.primary,
+                    border: '1px solid var(--border)', marginRight: '4px',
+                  }} />
+                  {brand.visual_identity.palette.primary}
+                </>
+              )}
+            </div>
+          )}
+
+          <h3 style={{ fontSize: '16px', margin: '24px 0 4px' }}>What you&rsquo;re pitching</h3>
+          <p style={{ fontSize: '13px', marginBottom: '12px' }}>
+            Only the half being offered goes in the file — an influencer price ladder in a
+            podcast-only deck is a price list for something the prospect was never offered.
+          </p>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {[
+              ['both', 'Podcast + influencer marketing', 11],
+              ['podcast', 'Podcast only', 10],
+              ['marketing', 'Influencer marketing only', 10],
+            ].map(([value, label, slides]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setOfferType(value)}
+                className={offerType === value ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+              >
+                {label} · {slides} slides
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ---------- CHECKLIST ---------- */}
@@ -1405,7 +1471,7 @@ export default function ReportPage() {
           <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             {readyCount} of {checklist.length} ready
             <span style={{ margin: '0 8px' }}>·</span>
-            {DECK_STYLES[deckStyle]?.label || 'Classic'} style
+            {offerType === 'both' ? 11 : offerType === 'none' ? 9 : 10} slides
             {slidesLink && (
               <>
                 <span style={{ margin: '0 8px' }}>·</span>
