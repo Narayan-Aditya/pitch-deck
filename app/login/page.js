@@ -8,6 +8,10 @@ function LoginCard() {
   const { signIn, loading, user } = useAuth();
   const params = useSearchParams();
   const error = params.get('error');
+  // The middleware bounces a signed-in account from outside the allowlist back
+  // here. Without a reason on screen that reads as the button not working, and
+  // the person just presses it again.
+  const denied = params.get('denied') === 'domain';
   const next = params.get('next') || '/';
 
   return (
@@ -21,6 +25,18 @@ function LoginCard() {
         Sign in to build pitch decks and pick up where you left off — your reports
         follow you to any device.
       </p>
+
+      {denied && (
+        <div
+          className="card"
+          style={{ borderColor: 'var(--error)', marginBottom: '20px', textAlign: 'left' }}
+        >
+          <p style={{ fontSize: '13px', color: 'var(--error)', margin: 0 }}>
+            That account isn&apos;t an <strong>@opengrey.media</strong> address. Sign out of
+            Google, or switch accounts, and use your work one.
+          </p>
+        </div>
+      )}
 
       {error && (
         <div
