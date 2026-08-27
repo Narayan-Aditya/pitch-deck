@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { scrapeInstagram } from '@/lib/instagramScrape';
 import { getCached, putCached } from '@/lib/auditCache';
-import { QuotaExceeded, checkQuota, recordLookup } from '@/lib/quota';
+import { QuotaExceeded, checkQuota, quotaStatus, recordLookup } from '@/lib/quota';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 // Instagram usernames are letters, digits, periods and underscores, max 30.
@@ -42,7 +42,11 @@ export async function POST(request) {
   //    would make re-opening a prospect cost as much as finding one.
   if (!fresh) {
     const cached = await getCached('instagram', handle);
-    if (cached) return NextResponse.json({ success: true, stats: cached });
+    // The allowance rides along on every answer. A cap nobody can see is one
+    // people only discover by hitting it, mid-pitch.
+    if (cached) {
+      return NextResponse.json({ success: true, stats: cached, quota: await quotaStatus(userId) });
+    }
   }
 
   // 2. Only now, with a real call about to be made.
@@ -61,7 +65,11 @@ export async function POST(request) {
     const stats = await scrapeInstagram(handle);
     await putCached('instagram', handle, stats);
     await recordLookup(userId, 'instagram', handle);
-    return NextResponse.json({ success: true, stats: { ...stats, cached: { hit: false } } });
+    return NextResponse.json({
+      success: true,
+      stats: { ...stats, cached: { hit: false } },
+      quota: await quotaStatus(userId),
+    });
   } catch (err) {
     // Messages from scrapeInstagram are written as sentence fragments, because
     // the report page renders them inside "Couldn't do this automatically:

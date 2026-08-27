@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth, getDriveToken, forgetDriveToken } from '@/lib/AuthContext';
 import { DriveAuthError, uploadPptxAsGoogleSlides } from '@/lib/googleSlides';
-import { createReport } from '@/lib/reportStore';
+import { createReport, updateReport } from '@/lib/reportStore';
 import { logDeckEvent, DECK_DOWNLOADED, REPORT_CREATED, SLIDES_EXPORTED } from '@/lib/usage';
 import buildPitchDeck from '@/lib/deck/pitch/buildDeck';
 import { statsToAnalytics, toDeckArgs } from '@/lib/deckAdapter';
@@ -102,6 +102,7 @@ export default function PitchDeckPage() {
   const [brand, setBrand] = useState(null);
   const [igStats, setIgStats] = useState(null);
   const [igError, setIgError] = useState('');
+  const [quota, setQuota] = useState(null);
   // Seeded from the site's own link, but editable. The scraper finds whatever
   // the footer points at, which on a multi-brand site is sometimes the parent
   // company's account — and the lookup 502s often enough on its own that
@@ -147,6 +148,7 @@ export default function PitchDeckPage() {
         body: JSON.stringify({ handle }),
       });
       const data = await res.json();
+      if (data.quota) setQuota(data.quota);
       if (!data.success) throw new Error(data.error || 'the lookup failed');
       setIgStats(data.stats);
       mark('instagram', 'done');
@@ -217,6 +219,7 @@ export default function PitchDeckPage() {
     setRunning(true);
     setError('');
     setBrand(null); setIgStats(null); setIgError(''); setIgHandle(''); setMatches([]); setMatchNote('');
+    setQuota(null);
     setLibItems(null); setLibQuery(''); setLibTotal(0); setCategoryId('');
     setReportId(null); setSlidesUrl(''); setNeedsDrive(false);
     setSteps({ site: 'active' });
@@ -302,15 +305,30 @@ export default function PitchDeckPage() {
     );
   }
 
-  /** The row this deck gets in the reports list. Created once and reused, so
-   * exporting twice does not leave two entries for one prospect. */
-  async function ensureReport() {
-    if (reportId) return reportId;
-    const id = await createReport({
-      brandName: reportData.brandName,
-      instagram: igStats?.username ? `@${igStats.username}` : '',
-      reportData: { ...reportData, brandUrl: url.trim(), brand, offerType, generatedAt: new Date().toISOString() },
-    });
+  /** The row this deck gets in the reports list.
+   *
+   * Created on the first export and updated on every one after, rather than
+   * created once and left alone. Two things depend on that. Changing the offer
+   * or the content picks between exports would otherwise leave the saved report
+   * describing the first deck and not the one that went out. And slidesLink is
+   * only known *after* Drive accepts the upload — writing it here is what makes
+   * a deck findable on the History page, which reads exactly this field. */
+  async function saveReport({ slidesLink } = {}) {
+    const payload = {
+      ...reportData,
+      brandUrl: url.trim(),
+      brand,
+      offerType,
+      ...(slidesLink ? { slidesLink } : {}),
+      generatedAt: new Date().toISOString(),
+    };
+    const instagram = igStats?.username ? `@${igStats.username}` : '';
+
+    if (reportId) {
+      await updateReport(reportId, { reportData: payload, instagram });
+      return reportId;
+    }
+    const id = await createReport({ brandName: reportData.brandName, instagram, reportData: payload });
     setReportId(id);
     logDeckEvent(REPORT_CREATED, id);
     return id;
@@ -325,7 +343,9 @@ export default function PitchDeckPage() {
       if (!token) throw new DriveAuthError('no Google Drive permission yet');
       const blob = await buildPptx().write({ outputType: 'blob' });
       const file = await uploadPptxAsGoogleSlides(token, blob, `${reportData.brandName} — Open Grey Media Pitch`);
-      const id = await ensureReport();
+      // Saved before the event is logged: the link is the deliverable, the
+      // count is bookkeeping.
+      const id = await saveReport({ slidesLink: file.url });
       logDeckEvent(SLIDES_EXPORTED, id);
       setSlidesUrl(file.url);
       window.open(file.url, '_blank', 'noopener');
@@ -358,7 +378,7 @@ export default function PitchDeckPage() {
       a.download = `${fileSlug(reportData.brandName)}-open-grey-media-proposal.pptx`;
       a.click();
       URL.revokeObjectURL(href);
-      const id = await ensureReport();
+      const id = await saveReport(slidesUrl ? { slidesLink: slidesUrl } : {});
       logDeckEvent(DECK_DOWNLOADED, id);
     } catch (err) {
       setError(err.message || 'Could not build the .pptx.');
@@ -486,7 +506,16 @@ export default function PitchDeckPage() {
             <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>Their Instagram</h3>
             <p style={{ fontSize: '13px', marginBottom: '14px' }}>
               Taken from the account their site links to. This is the one step that costs a
-              paid lookup.
+              paid lookup — an account already looked up recently is served from the cache
+              and costs nothing.
+              {quota?.limit ? (
+                <>
+                  {' '}
+                  <strong style={{ color: quota.remaining === 0 ? 'var(--error)' : 'inherit' }}>
+                    {quota.remaining ?? '—'} of {quota.limit} left this month.
+                  </strong>
+                </>
+              ) : null}
             </p>
             {igStats ? (
               <>
@@ -503,9 +532,11 @@ export default function PitchDeckPage() {
                     can say the source changed too. */}
                 <Row
                   label="Source"
-                  value={igStats.source === 'apify'
-                    ? 'Apify — the fallback, because browse2api could not answer'
-                    : 'browse2api'}
+                  value={igStats.cached?.hit
+                    ? `Saved lookup from ${new Date(igStats.cached.fetched_at).toLocaleDateString()} — this one was free`
+                    : igStats.source === 'apify'
+                      ? 'Apify — the fallback, because browse2api could not answer'
+                      : 'browse2api'}
                 />
               </>
             ) : (

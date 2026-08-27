@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "audit:deck": "node scripts/deck-audit/audit.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

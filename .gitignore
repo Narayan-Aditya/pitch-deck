@@ -55,3 +55,6 @@ __pycache__/
 next-env.d.ts
 
 .vercel
+
+# Decks the layout audit writes so a finding can be opened in PowerPoint.
+.deck-audit/
