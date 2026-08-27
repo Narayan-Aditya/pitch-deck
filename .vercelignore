@@ -12,8 +12,13 @@ calibrate.mjs
 
 # The layout audit and the decks it writes. Both are for a developer checking
 # slide geometry; neither is reachable from the deployed app.
-scripts/
-.deck-audit/
+#
+# Leading slashes are load-bearing. These follow .gitignore's rules, where an
+# unanchored `supabase/` matches a directory of that name at ANY depth — which
+# took lib/supabase/ with it and failed the build on "Can't resolve
+# './supabase/client'", a file that had been there all along.
+/scripts/
+/.deck-audit/
 
 # Migrations are run by hand in the Supabase SQL editor, never by the app.
-supabase/
+/supabase/
