@@ -770,7 +770,7 @@ export default function PitchDeckPage() {
             {slidesUrl && (
               <p style={{ marginTop: '12px', fontSize: '13px' }}>
                 Opened in Google Slides. <a href={slidesUrl} target="_blank" rel="noreferrer">Open it again ↗</a>
-                {reportId && <> — saved to <Link href={`/report/${reportId}`}>your reports</Link>.</>}
+                {' '}— the file is in your Drive, and it counts towards your team&rsquo;s usage.
               </p>
             )}
           </div>
