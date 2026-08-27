@@ -7,18 +7,13 @@
 # It does exclude .env* on its own — verified: OPENAI_API_KEY is absent from
 # the deployed functions, so secrets in .env.local are not uploaded.
 
-# Scraper output. Local, per-run, and stale the moment it ships. Leaving it in
-# meant /api/ig-stats served whichever brand was last scraped on someone's
-# laptop, to everyone, which is worse than the honest "no stats" the route
-# already handles.
-stats.json
-stats.csv
-
-# The Instagram scraper and its bytecode. Serverless has no Python runtime, so
-# /api/ig-fetch short-circuits before ever reaching this.
-ig_data.py
-__pycache__/
-*.pyc
-
 # Relevance-tuning script — developer tooling, not imported by the app.
 calibrate.mjs
+
+# The layout audit and the decks it writes. Both are for a developer checking
+# slide geometry; neither is reachable from the deployed app.
+scripts/
+.deck-audit/
+
+# Migrations are run by hand in the Supabase SQL editor, never by the app.
+supabase/

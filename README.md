@@ -1,248 +1,136 @@
-# Brand Pitch Report Generator
+# OGM Pitch Deck
 
-Turns a brand name and an Instagram handle into an editable PowerPoint pitch
-deck for Open Grey Media. The report page fills itself in — brand summary,
-Instagram numbers, the "what their numbers mean" paragraph, and which of the
-creator's past videos are relevant to that prospect — and you correct anything
-that looks wrong before hitting Download.
+Paste a prospect's website, get an eleven-slide proposal coloured to their
+brand, and send it straight into Google Slides.
 
-Sign-in is Google via Supabase, and reports live in Postgres, so they follow a
-person to any device. Every report created and every deck downloaded is
-recorded, so `/admin` can show who on the team is actually shipping decks.
-
-## Local development
+Sign-in is Google via Supabase. Every deck built, downloaded and exported is
+recorded, so `/admin` can show who on the team is shipping decks and how much
+of the Instagram allowance each person has spent.
 
 ```bash
 npm install
-cp .env.example .env.local   # OPENAI_API_KEY + the two Supabase vars
+npm run dev          # http://localhost:3000
+```
+
+Copy `.env.example` to `.env.local` first — the app runs without the optional
+keys, but not without Supabase.
+
+## The flow
+
+```
+/pitch-deck
+  1  POST /api/brand            their site: name, About copy, socials, brand colour
+  2  POST /api/ig-fetch         the Instagram account their site links to  ← the paid call
+  3  POST /api/creator-matches  our own content, scored against their About copy
+     GET  /api/creator-library  or search the archive by hand
+  →  build the deck in the browser, upload to Drive as Slides
+```
+
+Only the first step can stop a run. The other two have a defined fallback on
+the slide, so a prospect with no Instagram and no matching content still gets a
+deck — it swaps a brand portrait in for the audit slide, and prints a
+placeholder line where the proof would go.
+
+## The deck
+
+`lib/deck/` is the exporter, and it is a copy of a separately-developed deck
+rather than something to edit casually — `npm run audit:deck` builds eleven
+fixture decks and checks that no text overlaps another run or an image, and
+that every picture is placed at its own aspect ratio. Run it after any change
+in there.
+
+Nine slides are unconditional. The Instagram audit slide and the brand portrait
+are alternatives, so that pair is always exactly one. Each offer kind selected —
+podcast, influencer marketing — adds its own slide, which is why the count runs
+9, 10, 11 rather than being fixed.
+
+`lib/deckAdapter.js` is where this app's shapes meet the deck's. Adapting there
+rather than editing `lib/deck/` is what keeps that directory identical to the
+copy the audit harness checks.
+
+### Colour
+
+`lib/brandColour.js` reads the brand's own CSS custom properties out of the
+static HTML. It is deliberately browser-free: the version this replaced
+headless-rendered the page and sampled computed CSS, and against one real
+storefront it sampled fourteen unstyled `<a>` tags, concluded the brand colour
+was `#0000EE` — the browser's default link blue — and themed a black-and-white
+luxury brand in indigo. The real colour was in a `--color-button` property in
+the HTML the whole time.
+
+When a site gives up no chromatic signal at all, that is a real answer: the
+deck seeds a ground from the domain instead, so the same prospect always gets
+the same deck.
+
+## What costs money
+
+One thing: the Instagram lookup. Everything else is a public page or a file on
+disk.
+
+- **Cached** in `audit_cache`, keyed on the handle with `@` stripped and the
+  case folded. `AUDIT_CACHE_TTL_DAYS` (default 7) decides how long an answer
+  stands — that is the knob for how much browse2api bills.
+- **Capped** at `INSTAGRAM_MONTHLY_LIMIT` (default 20) per person per calendar
+  month, counted from `lookup_events`, which only the server writes and only
+  with the service key. A cache hit is free and is never counted against it.
+- **Failed over** to Apify when browse2api is down, out of quota, has its key
+  disabled, or returns an empty profile. With no Apify token configured,
+  browse2api's own error surfaces instead.
+
+Both degrade to no-ops without `SUPABASE_SERVICE_KEY`, and a Supabase outage
+fails open — locking the team out mid-pitch is worse than a few uncounted
+lookups.
+
+## Supabase
+
+Run the migrations in order, by hand, in the SQL editor:
+
+```
+supabase/migrations/0001_init.sql              profiles, reports, deck_events, RLS
+supabase/migrations/0002_slides_export.sql     the slides_exported action
+supabase/migrations/0003_audit_cache_quota.sql audit_cache, lookup_events, the month's lookups
+```
+
+Then make yourself an admin — it cannot be done from the app, because a trigger
+rejects the change whenever `auth.uid()` is set, which it always is from a
+browser:
+
+```sql
+update public.profiles set is_admin = true where email = 'you@example.com';
+```
+
+`audit_cache` and `lookup_events` have RLS on with **no policies at all**. That
+is the intent: only the service_role key reaches them, and no browser should.
+
+### The reports table
+
+Still written on export, no longer read. It is the only record of *which*
+prospect was pitched, it costs one insert, and it would be unrecoverable if
+dropped — the admin dashboard counts from `deck_events` instead. See the note
+at the top of `lib/reportStore.js`.
+
+## Deploying
+
+Vercel, Node runtime. `/api/brand` pins `runtime = 'nodejs'` because
+`lib/brandColour.js` uses sharp to read the logo bitmap, and the edge runtime
+has no native binary for it. Both scraping routes set `maxDuration = 60`.
+
+`next.config.mjs` traces `nitin josi data/**` into the `/api/creator-*`
+functions — those read the archive off disk at request time, and without the
+trace the routes find nothing once deployed.
+
+One thing crossing from the Python service this replaced is worth knowing
+rather than discovering: that version's HTTP client presented a real browser's
+TLS fingerprint, and Node's does not. Sites behind Cloudflare that it walked
+through may answer this one with a challenge page, and serverless egress makes
+that likelier. A residential proxy fixes the address, not the handshake.
+
+## Scripts
+
+```bash
 npm run dev
+npm run build
+npm run lint
+npm run audit:deck   # eleven fixture decks, checked for overlap and crop
+node calibrate.mjs   # relevance tuning against the creator corpus
 ```
-
-Open http://localhost:3000.
-
-## Supabase setup
-
-1. Create a project, then copy Project Settings → API → **Project URL** and the
-   **anon public** key into `.env.local`. Never the `service_role` key.
-2. Google Cloud → Credentials → OAuth client ID (Web). Authorized redirect URI:
-   `https://<your-ref>.supabase.co/auth/v1/callback`
-3. Supabase → Authentication → Providers → Google: paste the client ID/secret.
-   Under URL Configuration set the Site URL and add both
-   `http://localhost:3000/**` and your production URL as redirect URLs.
-4. Run `supabase/migrations/0001_init.sql` in the SQL editor, then
-   `supabase/migrations/0002_slides_export.sql`. Both are idempotent, so
-   re-running them after a schema change is safe.
-5. Make yourself an admin after your first login:
-   `update public.profiles set is_admin = true where email = 'you@example.com';`
-
-### Security model
-
-The browser talks to Postgres directly with the anon key, so **row level
-security is the access control** — not the UI, and not the API routes. Three
-things enforce it:
-
-- Every table has RLS on: you see your own rows, admins see everyone's.
-- `profiles` has **no update policy at all**. RLS cannot restrict individual
-  columns, so a policy permitting someone to edit their own row also permitted
-  setting `is_admin = true` and reading the whole team's data. That was a real
-  bug, caught by the script below. A trigger now blocks changes to that column
-  from the client as a second line of defence.
-- `proxy.js` refuses unauthenticated requests to `/api/*`, which is what stops
-  a stranger with the URL from spending the OpenAI budget or driving the
-  Instagram session.
-
-After changing any policy, run the checks:
-
-```bash
-node scripts/verify-rls.mjs
-```
-
-It signs up two throwaway accounts with the anon key and tries to read, edit
-and impersonate across them. A broken policy is silent — it returns rows rather
-than raising — so this is the only thing that will tell you.
-
-## Deploying to Vercel
-
-```bash
-npm i -g vercel
-vercel          # preview deploy
-vercel --prod   # production
-```
-
-Or push to GitHub and import the repo at vercel.com/new. No `vercel.json` is
-needed — the framework preset handles it.
-
-**Set `OPENAI_API_KEY` in Project Settings → Environment Variables.** It is the
-only required variable. `.env.local` is gitignored and never reaches the
-deploy, so without this every auto-generated step fails and has to be typed in
-by hand. See `.env.example` for the optional ones.
-
-### Instagram numbers once deployed
-
-`/api/ig-fetch` calls browse2api's hosted Instagram Profile & Posts API
-(`lib/instagramScrape.js`), so it works on Vercel — but only if
-**`BROWSE2API_KEY` is set in Project Settings → Environment Variables.**
-Without it every lookup fails with "no Instagram API key is saved on the
-server" and the numbers have to be typed in by hand.
-
-Opening a report with no numbers on it fires that lookup automatically, once.
-Re-opening a report that already has numbers does not. "↻ Get latest" is the
-manual re-fetch.
-
-One thing genuinely does not survive the deploy, and it is not a bug:
-
-- **`/api/ig-stats`** reads `stats.json`, which is `ig_data.py` output and is
-  kept off the deploy by `.vercelignore`. It degrades to "no stats" rather than
-  erroring, and the live lookup above covers the gap.
-
-  `.gitignore` alone is not enough here: the Vercel CLI uploads the working
-  directory without applying it, so a `vercel` deploy shipped one developer's
-  `stats.json` and served that brand's numbers to everyone. `.vercelignore` is
-  what actually keeps it out, and what makes a CLI deploy match a Git-connected
-  one. (The CLI does exclude `.env*` by itself — secrets are not affected.)
-
-Creator-content matching *does* work deployed: `nitin josi data/` is committed
-and traced into the function bundle via `outputFileTracingIncludes` in
-`next.config.mjs`.
-
-Every route that calls the model sets `maxDuration = 60`, because the
-serverless default of 10s is not enough for a completion and the route would
-otherwise 504 in production while working fine locally.
-
-## How it fits together
-
-| Path | Role |
-| --- | --- |
-| `app/page.js` | Dashboard — lists saved reports |
-| `app/new-report/page.js` | Brand name + Instagram handle, creates the report |
-| `app/report/[id]/page.js` | The 7-step guided editor and the Download button |
-| `lib/buildPptx.js` | Builds the deck with pptxgenjs, in the browser |
-| `lib/deckStyles.js` | The five looks a deck can be built in |
-| `lib/reportStore.js` | Report persistence on Supabase Postgres |
-| `lib/openaiGenerate.js` | All four generation calls |
-| `lib/relevance.js`, `lib/creatorCorpus.js` | Scores the creator's back catalogue against the prospect |
-| `app/api/creator-library/route.js` | Search that catalogue by hand, for the picker in step 5 |
-| `lib/instagramScrape.js` | Live Instagram lookup via browse2api — works deployed |
-| `lib/creatorStats.js` | **Generated.** The creator's own numbers and collab list |
-| `scripts/build-creator-stats.mjs` | Regenerates the above from `nitin josi data/` |
-| `ig_data.py` | Bulk Instagram scraper — local only, writes `stats.json` |
-
-Optional slides drop out when their content is empty, so a deck is 7–12 slides
-depending on how much has been filled in. A blank pricing slide in front of a
-client is worse than no pricing slide.
-
-### The creator's own numbers
-
-Two slides are about Open Grey Media rather than the prospect: **Nitin Joshi**
-(measured Instagram and YouTube figures, benchmarked against accounts of the
-same size) and **Brands We've Worked With** (three Instagram collaborations and
-three podcast episodes).
-
-Both read `lib/creatorStats.js`, which is generated — the deck is built in the
-browser and the dumps in `nitin josi data/` are 1.9MB, which has no business
-being shipped to a visitor to print twelve numbers. After re-scraping either
-dump:
-
-```bash
-node scripts/build-creator-stats.mjs   # rewrites lib/creatorStats.js — commit it
-```
-
-The collaborations are not guessed from captions. Instagram marks them itself
-(`sponsors`, `coauthorProducers`), and each podcast description names its
-guest's company, so both lists are derived rather than curated. The report page
-seeds its editable fields with the best-performing three of each; the rest are
-in the file, one dropdown away.
-
-The follower count is the one figure the Instagram dump cannot supply — it has
-no profile record — so it is set by hand at the top of the generator script.
-
-No slide carries a video poster. Every video is its title plus a visible
-"View ↗" link, because a bare PowerPoint hyperlink is invisible until hovered
-and reads as a dead end. That is also why the deck embeds no images at all:
-nothing is fetched at export time, and a finished deck is around 280KB.
-
-### Export to Google Slides
-
-The **Export to Google Slides** button uploads the same `.pptx` the download
-button builds into the signed-in user's Drive, with
-`mimeType: application/vnd.google-apps.presentation` — Drive converts on upload,
-so no Slides-API step is needed (`lib/googleSlides.js`). The resulting link is
-saved on the report, so it survives a reload and sits on the sticky bar.
-
-**The request body is `multipart/related`, assembled by hand.** Drive's
-`uploadType=multipart` is not `multipart/form-data`, so the obvious `FormData`
-body — which is what the pre-571d197 version used — is rejected with a bare
-`400 Bad Request` and no explanation. Metadata part first, file second, CRLF
-line endings, blank line between a part's headers and its body, `--` on the
-closing boundary. Get any of those wrong and it is the same opaque 400.
-
-This is the same converter you get by dragging the file into Drive by hand. **The
-button saves clicks; it does not improve fidelity.** If a style looks wrong in
-Slides, it will look equally wrong either way — Google substitutes fonts it does
-not have, and Classic (Calibri, Helvetica Neue) and Minimal (Segoe UI) are more
-exposed to that than Editorial (Georgia) or Bold (Trebuchet MS).
-
-Setup, beyond the two migrations:
-
-1. Google Cloud → **OAuth consent screen** → add the scope
-   `https://www.googleapis.com/auth/drive.file`. This is the narrow, per-file
-   scope — it reaches only files this app created, never the rest of a Drive —
-   and unlike full `drive` it is **not** a restricted scope, so it needs no
-   Google verification review.
-2. Nothing to change in Supabase. The scope is requested by
-   `signInWithOAuth` in `lib/AuthContext.js`, not configured in the dashboard.
-3. Anyone already signed in consented before Drive was ever asked for, so their
-   first export gets a 403. The button turns into **Connect Google Drive**,
-   which re-runs consent with `prompt=consent` and returns them to the report.
-
-The one awkward part is the token. Supabase hands back `provider_token` once, on
-the session minted at the OAuth exchange, and never refreshes it — so
-`AuthContext` copies it into `sessionStorage` the moment it appears. It dies with
-the tab, and Google expires it in about an hour; after that the export 403s and
-the reconnect button appears. That is the trade for not storing a Google refresh
-token in Postgres.
-
-### Deck styles
-
-A report picks one of five styles — **Classic, Midnight, Editorial, Bold,
-Minimal** — and the choice is stored on the report, so reopening it downloads
-the same look. Reports made before styles existed have no key and fall back to
-Classic, which reproduces the original deck exactly.
-
-A style is a palette, two typefaces, and the header bar's height
-(`lib/deckStyles.js`). **Slide layout is shared** — every x/y/w/h in
-`buildPptx.js` was measured against a real reference deck, and five independent
-sets of coordinates would be five sets to keep from overlapping. If you want
-styles that also move things around, that is a bigger change than adding a
-palette.
-
-Adding a style means adding one entry to `DECK_STYLES`. Two tokens are easy to
-get wrong:
-
-- `lightBg` must read as *slightly off* `bg`, not "light" — on Midnight it is
-  darker than the background, not lighter.
-- `charWidth` is the average glyph width as a fraction of font size, used by
-  `estimateTextHeight()` to guess where text wraps. Georgia sets about 8% wider
-  than Helvetica; leaving this at the default overflows text boxes on a serif
-  style, and nothing catches it until someone opens the deck.
-
-No hex literal belongs in `buildPptx.js` — a colour hardcoded there is a style
-only one deck can use.
-
-### Picking creator content by hand
-
-Step 5 fills itself from `/api/creator-matches`, which scores the catalogue
-against the prospect and involves a model call. When that guesses wrong — or
-when you already know which reel you want — **Browse our videos** searches all
-685 items directly through `/api/creator-library`.
-
-That is a plain substring search, not the relevance scorer: `lib/relevance.js`
-canonicalises tokens for topical matching, which is exactly wrong when someone
-is typing words they remember from a title. Every word has to appear in the
-post (AND, not OR) — on a catalogue this small, OR returns 468 results for
-"food business" and AND returns 25.
-
-It is a route rather than a generated client-side index because 685 items is
-more than a picker used a few times a day should cost every page load. Both
-creator routes share `toWireItem()` in `lib/creatorCorpus.js`, so anything
-picked from either lands in `creatorMatches` in the same shape.
