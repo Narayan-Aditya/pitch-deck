@@ -17,6 +17,10 @@ function relativeTime(ts) {
   return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+// Mirrors INSTAGRAM_MONTHLY_LIMIT on the server. Shown, not enforced — the API
+// is what actually refuses a lookup (lib/quota.js); this only draws the number.
+const MONTHLY_LIMIT = 20;
+
 export default function AdminPage() {
   const { profile, loading: authLoading } = useAuth();
   const [rows, setRows] = useState([]);
@@ -61,8 +65,9 @@ export default function AdminPage() {
       reports: acc.reports + (r.reports_created || 0),
       decks: acc.decks + (r.decks_downloaded || 0),
       slides: acc.slides + (r.slides_exported || 0),
+      lookups: acc.lookups + (r.lookups_this_month || 0),
     }),
-    { reports: 0, decks: 0, slides: 0 }
+    { reports: 0, decks: 0, slides: 0, lookups: 0 }
   );
 
   return (
@@ -86,15 +91,19 @@ export default function AdminPage() {
           </div>
           <div className="metric-card">
             <div className="metric-value">{totals.reports}</div>
-            <div className="metric-label">Reports created</div>
+            <div className="metric-label">Decks built</div>
           </div>
           <div className="metric-card">
             <div className="metric-value">{totals.decks}</div>
-            <div className="metric-label">Decks downloaded</div>
+            <div className="metric-label">Downloaded as .pptx</div>
           </div>
           <div className="metric-card">
             <div className="metric-value">{totals.slides}</div>
             <div className="metric-label">Sent to Google Slides</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-value">{totals.lookups}</div>
+            <div className="metric-label">Paid lookups this month</div>
           </div>
         </div>
 
@@ -118,9 +127,10 @@ export default function AdminPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   <th style={{ textAlign: 'left', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Person</th>
-                  <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Reports</th>
-                  <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Decks</th>
+                  <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Built</th>
+                  <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Downloaded</th>
                   <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Slides</th>
+                  <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Lookups</th>
                   <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Last active</th>
                 </tr>
               </thead>
@@ -150,6 +160,13 @@ export default function AdminPage() {
                     <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600 }}>{r.reports_created}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600 }}>{r.decks_downloaded}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600 }}>{r.slides_exported ?? 0}</td>
+                    {/* Against the monthly allowance, so a person who is out
+                        of lookups reads as out rather than as merely busy. */}
+                    <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap',
+                      color: (r.lookups_this_month || 0) >= MONTHLY_LIMIT ? 'var(--error)' : undefined }}>
+                      {r.lookups_this_month || 0}
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> / {MONTHLY_LIMIT}</span>
+                    </td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
                       {relativeTime(r.last_activity)}
                     </td>

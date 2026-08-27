@@ -21,6 +21,11 @@ function isPublic(pathname) {
   return PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p));
 }
 
+// Mirrors email_is_allowed() in supabase/migrations/0004. Kept as a literal
+// rather than an env var: an allowlist that can be widened by a dashboard
+// setting is one that can be widened by accident.
+const ALLOWED_EMAIL_RE = /@opengrey\.media$/i;
+
 export async function proxy(request) {
   let response = NextResponse.next({ request });
 
@@ -48,6 +53,26 @@ export async function proxy(request) {
   // rather than trusting whatever the cookie claims.
   const { data: { user } } = await supabase.auth.getUser();
   const { pathname } = request.nextUrl;
+
+  // Who is allowed in at all.
+  //
+  // A trigger on auth.users refuses to create an account outside this domain
+  // (supabase/migrations/0004), but a trigger only stops new signups — every
+  // account made before it, including any that was handed admin, still has a
+  // valid session. This is the check that actually stands between one of those
+  // and the browse2api bill, so it runs on every request rather than at login.
+  if (user && !ALLOWED_EMAIL_RE.test(user.email || '')) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { success: false, error: 'this tool is for @opengrey.media accounts only' },
+        { status: 403 }
+      );
+    }
+    const denied = request.nextUrl.clone();
+    denied.pathname = '/login';
+    denied.searchParams.set('denied', 'domain');
+    return isPublic(pathname) ? response : NextResponse.redirect(denied);
+  }
 
   if (user || isPublic(pathname)) return response;
 

@@ -36,9 +36,9 @@ export default function AuthNav() {
         <span
           className="badge"
           style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}
-          title="Reports you've created and decks you've downloaded"
+          title="Decks you've built, and how many went to Google Slides"
         >
-          {usage.reports_created} reports · {usage.decks_downloaded} decks
+          {usage.reports_created} built · {usage.slides_exported ?? 0} to Slides
         </span>
       )}
 
@@ -46,7 +46,7 @@ export default function AuthNav() {
         <Link href="/admin" className="btn btn-ghost btn-sm">Team usage</Link>
       )}
 
-      <Link href="/new-report" className="btn btn-primary btn-sm">+ New Report</Link>
+      <Link href="/pitch-deck" className="btn btn-primary btn-sm">+ New Deck</Link>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         {avatar && (
