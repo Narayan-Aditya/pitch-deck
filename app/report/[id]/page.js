@@ -954,7 +954,7 @@ export default function ReportPage() {
     { label: 'Brand summary written', ok: aboutState === 'done' },
     { label: 'Instagram numbers added', ok: igState === 'done' },
     { label: 'Instagram insight written', ok: insightState === 'done' },
-    { label: 'Our related videos found', ok: creatorMatches.length > 0, optional: true },
+    { label: 'Our related videos found', ok: creatorMatches.length > 0 },
     { label: 'Brands we’ve worked with', ok: collabCount > 0, optional: true },
     { label: 'Contact details on the last slide', ok: !!(nextStep.bookingLink.trim() || nextStep.email.trim() || nextStep.phone.trim()) },
   ];
@@ -983,6 +983,81 @@ export default function ReportPage() {
             <strong>How this works:</strong> everything below fills in by itself. Read it over, fix anything
             that looks wrong, then hit Download. Nothing to save — your changes are kept automatically.
           </p>
+        </div>
+
+        {/* ---------- THE PROSPECT'S SITE, AND WHAT WE'RE PITCHING ---------- */}
+        {/* This replaced the deck-style picker. The deck no longer has styles to
+            choose between: it reads the brand's own colour off their site and
+            picks a ground to match, so a chooser here would only let someone
+            override the one thing that makes each deck look like the prospect. */}
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>Their website</h3>
+          <p style={{ fontSize: '13px', marginBottom: '16px' }}>
+            Reads their brand colour, social channels and About copy. The deck&rsquo;s
+            palette is chosen from that colour, so a prospect with no scrape gets a
+            ground picked from their domain instead.
+          </p>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <input
+              type="url"
+              className="input"
+              style={{ flex: '1 1 280px' }}
+              placeholder="https://example-brand.com"
+              value={brandUrl}
+              onChange={(e) => setBrandUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleScrapeBrand(); } }}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleScrapeBrand}
+              disabled={scrapingBrand || !brandUrl.trim()}
+            >
+              {scrapingBrand ? 'Reading…' : brand ? 'Read again' : 'Read site'}
+            </button>
+          </div>
+
+          {brand && (
+            <div style={{ marginTop: '14px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+              <strong>{brand.name || 'Unnamed'}</strong>
+              {brand.platform && brand.platform !== 'unknown' && ` · ${brand.platform}`}
+              {` · ${Object.keys(brand.social_links || {}).length} channels`}
+              {brand.visual_identity?.palette?.primary && (
+                <>
+                  {' · '}
+                  <span style={{
+                    display: 'inline-block', width: '10px', height: '10px',
+                    borderRadius: '2px', verticalAlign: 'middle',
+                    background: brand.visual_identity.palette.primary,
+                    border: '1px solid var(--border)', marginRight: '4px',
+                  }} />
+                  {brand.visual_identity.palette.primary}
+                </>
+              )}
+            </div>
+          )}
+
+          <h3 style={{ fontSize: '16px', margin: '24px 0 4px' }}>What you&rsquo;re pitching</h3>
+          <p style={{ fontSize: '13px', marginBottom: '12px' }}>
+            Only the half being offered goes in the file — an influencer price ladder in a
+            podcast-only deck is a price list for something the prospect was never offered.
+          </p>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {[
+              ['both', 'Podcast + influencer marketing', 11],
+              ['podcast', 'Podcast only', 10],
+              ['marketing', 'Influencer marketing only', 10],
+            ].map(([value, label, slides]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setOfferType(value)}
+                className={offerType === value ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+              >
+                {label} · {slides} slides
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ---------- STEP 1 ---------- */}
@@ -1152,7 +1227,7 @@ export default function ReportPage() {
           open={!!expanded.matches}
           onToggle={() => toggleStep('matches')}
           error={stepErrors.matches}
-          subtitle={matchNote || "Picked automatically from our YouTube and Instagram. Remove any that don't fit, or browse the library below — the slide is left out if none are kept."}
+          subtitle={matchNote || "Picked automatically from our YouTube and Instagram. Remove any that don't fit, or browse the library below. Keep at least one: the track-record slide is part of the deck's fixed spine, so with nothing kept it still prints — as a placeholder line."}
           state={findingMatches ? 'working' : creatorMatches.length ? 'done' : 'needs'}
           action={
             <>
@@ -1343,81 +1418,6 @@ export default function ReportPage() {
             </div>
           </div>
         </StepCard>
-
-        {/* ---------- THE PROSPECT'S SITE, AND WHAT WE'RE PITCHING ---------- */}
-        {/* This replaced the deck-style picker. The deck no longer has styles to
-            choose between: it reads the brand's own colour off their site and
-            picks a ground to match, so a chooser here would only let someone
-            override the one thing that makes each deck look like the prospect. */}
-        <div className="card" style={{ marginBottom: '20px' }}>
-          <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>Their website</h3>
-          <p style={{ fontSize: '13px', marginBottom: '16px' }}>
-            Reads their brand colour, social channels and About copy. The deck&rsquo;s
-            palette is chosen from that colour, so a prospect with no scrape gets a
-            ground picked from their domain instead.
-          </p>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <input
-              type="url"
-              className="input"
-              style={{ flex: '1 1 280px' }}
-              placeholder="https://example-brand.com"
-              value={brandUrl}
-              onChange={(e) => setBrandUrl(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleScrapeBrand(); } }}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleScrapeBrand}
-              disabled={scrapingBrand || !brandUrl.trim()}
-            >
-              {scrapingBrand ? 'Reading…' : brand ? 'Read again' : 'Read site'}
-            </button>
-          </div>
-
-          {brand && (
-            <div style={{ marginTop: '14px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-              <strong>{brand.name || 'Unnamed'}</strong>
-              {brand.platform && brand.platform !== 'unknown' && ` · ${brand.platform}`}
-              {` · ${Object.keys(brand.social_links || {}).length} channels`}
-              {brand.visual_identity?.palette?.primary && (
-                <>
-                  {' · '}
-                  <span style={{
-                    display: 'inline-block', width: '10px', height: '10px',
-                    borderRadius: '2px', verticalAlign: 'middle',
-                    background: brand.visual_identity.palette.primary,
-                    border: '1px solid var(--border)', marginRight: '4px',
-                  }} />
-                  {brand.visual_identity.palette.primary}
-                </>
-              )}
-            </div>
-          )}
-
-          <h3 style={{ fontSize: '16px', margin: '24px 0 4px' }}>What you&rsquo;re pitching</h3>
-          <p style={{ fontSize: '13px', marginBottom: '12px' }}>
-            Only the half being offered goes in the file — an influencer price ladder in a
-            podcast-only deck is a price list for something the prospect was never offered.
-          </p>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {[
-              ['both', 'Podcast + influencer marketing', 11],
-              ['podcast', 'Podcast only', 10],
-              ['marketing', 'Influencer marketing only', 10],
-            ].map(([value, label, slides]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setOfferType(value)}
-                className={offerType === value ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-              >
-                {label} · {slides} slides
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* ---------- CHECKLIST ---------- */}
         <div className="card" style={{ marginBottom: '20px' }}>
