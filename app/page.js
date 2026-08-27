@@ -66,11 +66,18 @@ export default function Dashboard() {
             Brand Pitch Report Generator
           </h1>
           <p style={{ fontSize: '18px', color: 'var(--text-secondary)', maxWidth: '600px', margin: '0 auto 32px' }}>
-            Enter a brand name and Instagram handle to generate a pitch report as an editable PowerPoint.
+            Paste a prospect&rsquo;s website and get the deck, or fill a report in by hand.
           </p>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link href="/new-report" className="btn btn-primary btn-lg">
-              Generate New Report
+            {/* Primary, because it is the shorter road to the same deck: the
+                website supplies the brand facts the report flow asks a person
+                to type. The manual flow stays for prospects whose site gives up
+                nothing useful. */}
+            <Link href="/pitch-deck" className="btn btn-primary btn-lg">
+              OGM Pitch Deck
+            </Link>
+            <Link href="/new-report" className="btn btn-secondary btn-lg">
+              Report by hand
             </Link>
             {reports.length > 0 && (
               <a href="#history" className="btn btn-secondary btn-lg">
