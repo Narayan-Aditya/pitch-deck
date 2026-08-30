@@ -52,14 +52,20 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div className="page" style={{ padding: '48px 0' }}>
-      <div className="container" style={{ maxWidth: '820px' }}>
+    <div className="page-fixed" style={{ padding: '36px 0 0' }}>
+      <div
+        className="container"
+        style={{ maxWidth: '820px', display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}
+      >
 
-        <div style={{ textAlign: 'center' }} className="animate-fade-up">
-          <h1 style={{ marginBottom: '32px', lineHeight: 1.15 }}>OGM Pitch Deck</h1>
+        <div style={{ textAlign: 'center', flexShrink: 0 }} className="animate-fade-up">
+          <h1 style={{ marginBottom: '24px', lineHeight: 1.15 }}>OGM Pitch Deck</h1>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/pitch-deck" className="btn btn-primary btn-lg">
               Build a deck
+            </Link>
+            <Link href="/history" className="btn btn-secondary btn-lg">
+              History
             </Link>
             {profile?.is_admin && (
               <Link href="/admin" className="btn btn-secondary btn-lg">
@@ -69,8 +75,10 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div style={{ marginTop: '56px' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '6px' }}>
+        {/* Everything above the list is fixed; the list itself takes what is
+            left of the screen and scrolls inside it. */}
+        <div style={{ marginTop: '40px', display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '6px', flexShrink: 0 }}>
             <h2 style={{ fontSize: '20px' }}>Worth pitching this week</h2>
             {feed && (
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -78,7 +86,7 @@ export default function HomePage() {
               </span>
             )}
           </div>
-          <p style={{ fontSize: '13px', marginBottom: '18px' }}>
+          <p style={{ fontSize: '13px', marginBottom: '16px', flexShrink: 0 }}>
             Indian brands that raised money, signed a face, hired a marketing head or put a campaign
             out. Refreshes itself every half hour.
           </p>
@@ -86,19 +94,19 @@ export default function HomePage() {
           {/* A feed that quietly went empty and a feed that is still loading look
               the same on screen, so each says which it is. */}
           {error && (
-            <div className="card" style={{ borderColor: 'var(--error)' }}>
+            <div className="card" style={{ borderColor: 'var(--error)', flexShrink: 0 }}>
               <p style={{ fontSize: '13px', color: 'var(--error)', margin: 0 }}>{error}</p>
             </div>
           )}
 
           {!feed && !error && (
-            <div style={{ textAlign: 'center', padding: '48px' }}>
+            <div style={{ textAlign: 'center', padding: '48px', flexShrink: 0 }}>
               <div className="spinner" style={{ width: '32px', height: '32px', margin: '0 auto' }} />
             </div>
           )}
 
           {feed?.failed?.length > 0 && (
-            <div className="card" style={{ borderColor: 'var(--warning)', marginBottom: '14px', padding: '12px 16px' }}>
+            <div className="card" style={{ borderColor: 'var(--warning)', marginBottom: '14px', padding: '12px 16px', flexShrink: 0 }}>
               <p style={{ fontSize: '12px', color: 'var(--warning)', margin: 0 }}>
                 {feed.failed.map(f => `${f.source} didn’t answer (${f.error})`).join(' · ')}
                 {' — the rest of the feed is still current.'}
@@ -107,14 +115,14 @@ export default function HomePage() {
           )}
 
           {feed && feed.brands.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px', border: '1px dashed var(--border)', borderRadius: 'var(--radius-xl)' }}>
+            <div style={{ textAlign: 'center', padding: '40px', border: '1px dashed var(--border)', borderRadius: 'var(--radius-xl)', flexShrink: 0 }}>
               <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '13px' }}>
                 Nothing pitchable in the feeds right now. It refills as the outlets publish.
               </p>
             </div>
           )}
 
-          <div style={{ display: 'grid', gap: '10px' }}>
+          <div className="scroll-region" style={{ display: 'grid', gap: '10px', alignContent: 'start' }}>
             {feed?.brands.map(b => (
               <div key={b.key} className="card" style={{ padding: '16px 18px' }}>
                 <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>

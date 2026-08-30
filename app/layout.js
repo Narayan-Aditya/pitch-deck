@@ -3,6 +3,7 @@ import './globals.css';
 import { AuthProvider } from '@/lib/AuthContext';
 import AuthNav from './AuthNav';
 import ThemeToggle from './ThemeToggle';
+import BrandMark from './BrandMark';
 
 export const metadata = {
   title: 'Open Grey | Pitch Report Generator',
@@ -31,8 +32,8 @@ export default function RootLayout({ children }) {
           {/* Navbar */}
           <nav className="navbar">
             <Link href="/" className="navbar-brand" style={{ textDecoration: 'none' }}>
-              <div className="navbar-logo">OG</div>
-              <div className="navbar-name">Open Grey</div>
+              <BrandMark />
+              <div className="navbar-name">Open Grey Media</div>
             </Link>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               {/* Outside AuthNav on purpose: the theme is worth switching on the

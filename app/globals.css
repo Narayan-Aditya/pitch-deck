@@ -50,6 +50,12 @@
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --duration: 160ms;
 
+  /* The brand mark. A dark blob and a light one, and where they cross, grey. */
+  --lens-dark: #0b0b0c;
+  --lens-light: #ffffff;
+  --lens-stroke: #d9d6ce;
+  --lens-mid: #67645d;
+
   color-scheme: light;
 }
 
@@ -94,6 +100,14 @@
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
     --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.45);
 
+    /* Pure black would vanish into a dark navbar, so the dark blob lifts to a
+       mid grey and the light one comes down off white. The lens sits between
+       them, as it does in the light theme. */
+    --lens-dark: #6f6c65;
+    --lens-light: #ece9e1;
+    --lens-stroke: #4a4a42;
+    --lens-mid: #b0ada4;
+
     color-scheme: dark;
   }
 }
@@ -126,6 +140,11 @@
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
   --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.45);
+
+  --lens-dark: #6f6c65;
+  --lens-light: #ece9e1;
+  --lens-stroke: #4a4a42;
+  --lens-mid: #b0ada4;
 
   color-scheme: dark;
 }
@@ -226,6 +245,20 @@ a:hover { opacity: 0.75; }
   font-size: 14px;
   color: white;
   font-family: 'Poppins', sans-serif;
+}
+
+/* Height-driven, width from the viewBox — the mark is wider than it is tall
+   because the two blobs sit side by side. Fixing the width instead would crop
+   or letterbox it as the blobs drift. */
+.brand-mark {
+  height: 30px;
+  width: auto;
+  display: block;
+  flex-shrink: 0;
+  /* The viewBox is cropped to the blobs' full travel, so nothing should reach
+     the edge. Clipping anyway: if that arithmetic is a pixel out, losing a
+     pixel of blob is invisible where a blob crossing the wordmark is not. */
+  overflow: hidden;
 }
 
 .navbar-name {
@@ -816,6 +849,58 @@ a:hover { opacity: 0.75; }
 
 .animate-fade-up { animation: fadeUp 0.35s var(--ease) forwards; }
 .animate-fade-in { animation: fadeIn 0.25s var(--ease) forwards; }
+
+/* ============================================
+   FULL-HEIGHT PAGE — fits the screen instead of growing past it
+   ============================================ */
+/* Body becomes the column so a page can ask for "the rest of the screen"
+   without anyone hardcoding the navbar's height. */
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+body > main { flex: 1 1 auto; }
+
+/* Only when a page opts in does main become a fixed-height box. Every other
+   page keeps growing with its content and scrolling the window, which is what
+   a report or a long form wants. Falls back to ordinary scrolling wherever
+   :has() is unsupported — a degradation nobody would notice. */
+body:has(.page-fixed) > main {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-fixed {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The one part of a fixed page that scrolls. min-height:0 is what makes it
+   shrink to its share of the column rather than growing to fit its content —
+   without it a flex child refuses to go below its content height and the whole
+   layout scrolls instead. */
+.scroll-region {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the last card's shadow, and so the list doesn't end flush against
+     the edge as if it had been cut off. */
+  padding-bottom: 20px;
+}
+
+/* A short window has no room to fit a header, buttons and a usable list at
+   once, so below this the page goes back to scrolling normally. Phones in
+   landscape are the case that matters. */
+@media (max-height: 560px) {
+  body:has(.page-fixed) > main { min-height: auto; display: block; }
+  .page-fixed { display: block; overflow: visible; }
+  .scroll-region { overflow-y: visible; }
+}
 
 /* ============================================
    THEME TOGGLE — icon-only, so it overrides .btn's text padding

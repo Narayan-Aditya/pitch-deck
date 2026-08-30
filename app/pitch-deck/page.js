@@ -7,6 +7,7 @@ import { useAuth, getDriveToken, forgetDriveToken } from '@/lib/AuthContext';
 import { DriveAuthError, uploadPptxAsGoogleSlides } from '@/lib/googleSlides';
 import { createReport, updateReport } from '@/lib/reportStore';
 import { logDeckEvent, DECK_DOWNLOADED, REPORT_CREATED, SLIDES_EXPORTED } from '@/lib/usage';
+import { recordSearch } from '@/lib/brandWatch';
 import buildPitchDeck from '@/lib/deck/pitch/buildDeck';
 import { statsToAnalytics, toDeckArgs } from '@/lib/deckAdapter';
 import { CONTENT_CATEGORIES, categoryById, categoryForBrand } from '@/lib/deck/creatorCategories';
@@ -131,9 +132,14 @@ function PitchDeck() {
   // feed reads headlines, and a headline never gives the brand's website. So it
   // is shown as a reminder of who this deck is for, not prefilled into the URL
   // box where a wrong guess would send the scraper to another company's site.
-  const prospect = useSearchParams().get('brand');
+  const params = useSearchParams();
+  const prospect = params.get('brand');
 
-  const [url, setUrl] = useState('');
+  // Prefilled only from History, which is handing back an address this person
+  // pasted themselves. The home page feed passes a name and no url on purpose —
+  // it reads headlines, and a guessed domain would point the scrape at another
+  // company's site.
+  const [url, setUrl] = useState(() => params.get('url') || '');
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState({});
   const [error, setError] = useState('');
@@ -284,6 +290,10 @@ function PitchDeck() {
       // rather than picking something when nothing matches, which leaves the
       // dropdown on "no category" and the keyword matcher in charge.
       setCategoryId(categoryForBrand(scraped)?.id || '');
+      // Onto the History page. Not awaited and never checked: keeping a record
+      // of the lookup is a side effect of the work, not a precondition for it,
+      // so a failed write must not stand between a salesperson and their deck.
+      recordSearch({ brandName: scraped.name || url.trim(), siteUrl: url.trim(), brandData: scraped });
       mark('site', 'done');
     } catch (err) {
       mark('site', 'error');
