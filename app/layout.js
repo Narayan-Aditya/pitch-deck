@@ -2,6 +2,7 @@ import Link from 'next/link';
 import './globals.css';
 import { AuthProvider } from '@/lib/AuthContext';
 import AuthNav from './AuthNav';
+import ThemeToggle from './ThemeToggle';
 
 export const metadata = {
   title: 'Open Grey | Pitch Report Generator',
@@ -10,10 +11,20 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Applies a saved theme choice before the first paint. Without it the
+            browser's own preference paints for a frame and then flips, which
+            reads as a bug. Deliberately does nothing when no choice is stored:
+            the absence of the attribute is what lets the prefers-color-scheme
+            rule in globals.css decide. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "(function(){try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}})()",
+          }}
+        />
       </head>
       <body>
         <AuthProvider>
@@ -21,14 +32,14 @@ export default function RootLayout({ children }) {
           <nav className="navbar">
             <Link href="/" className="navbar-brand" style={{ textDecoration: 'none' }}>
               <div className="navbar-logo">OG</div>
-              <div>
-                <div className="navbar-name">Open Grey</div>
-                <div className="navbar-sub">Reports</div>
-              </div>
+              <div className="navbar-name">Open Grey</div>
             </Link>
-            {/* Renders nothing while signed out, which is what the login page
-                wants — no "New Report" button for someone who can't use it. */}
-            <AuthNav />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              {/* Outside AuthNav on purpose: the theme is worth switching on the
+                  login page too, and AuthNav renders nothing while signed out. */}
+              <ThemeToggle />
+              <AuthNav />
+            </div>
           </nav>
 
           <main>{children}</main>

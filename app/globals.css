@@ -49,6 +49,85 @@
   /* Transitions */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --duration: 160ms;
+
+  color-scheme: light;
+}
+
+/* ============================================
+   DARK PALETTE
+   Only the tokens change; nothing below this point knows which one is live.
+   It applies in two situations, and both need spelling out separately:
+     1. the browser/OS asks for dark and the user has not overridden it here
+     2. the user picked dark from the navbar, whatever the OS says
+   ============================================ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-primary: #14140f;
+    --bg-secondary: #1c1c17;
+    --bg-card: #1a1a15;
+    --bg-card-hover: #22221c;
+    --bg-glass: #1c1c17;
+    --border: #32322b;
+    --border-hover: #46463d;
+
+    /* Lifted off the light accent: #1b6b4a on a dark ground is too dim to
+       read as a link or to carry white button text. */
+    --accent: #4ea883;
+    --accent-soft: #1d3a2e;
+    --accent-dark: #6cc19c;
+
+    --text-primary: #f0f0ea;
+    --text-secondary: #b6b6ac;
+    --text-muted: #85857c;
+
+    --success: #58b97c;
+    --success-soft: #17301f;
+    --warning: #d19a4e;
+    --warning-soft: #33260f;
+    --error: #e08b84;
+    --error-soft: #3a1c19;
+    --info: #7ba4de;
+    --info-soft: #17233a;
+
+    /* Shadows lit the light theme by darkening it. On a dark ground that is
+       invisible, so these lean on opacity against black instead. */
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
+    --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.45);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg-primary: #14140f;
+  --bg-secondary: #1c1c17;
+  --bg-card: #1a1a15;
+  --bg-card-hover: #22221c;
+  --bg-glass: #1c1c17;
+  --border: #32322b;
+  --border-hover: #46463d;
+
+  --accent: #4ea883;
+  --accent-soft: #1d3a2e;
+  --accent-dark: #6cc19c;
+
+  --text-primary: #f0f0ea;
+  --text-secondary: #b6b6ac;
+  --text-muted: #85857c;
+
+  --success: #58b97c;
+  --success-soft: #17301f;
+  --warning: #d19a4e;
+  --warning-soft: #33260f;
+  --error: #e08b84;
+  --error-soft: #3a1c19;
+  --info: #7ba4de;
+  --info-soft: #17233a;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
+  --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.45);
+
+  color-scheme: dark;
 }
 
 /* ============================================
@@ -154,12 +233,6 @@ a:hover { opacity: 0.75; }
   font-weight: 700;
   font-size: 17px;
   color: var(--text-primary);
-}
-
-.navbar-sub {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-weight: 400;
 }
 
 /* ============================================
@@ -743,6 +816,151 @@ a:hover { opacity: 0.75; }
 
 .animate-fade-up { animation: fadeUp 0.35s var(--ease) forwards; }
 .animate-fade-in { animation: fadeIn 0.25s var(--ease) forwards; }
+
+/* ============================================
+   THEME TOGGLE — icon-only, so it overrides .btn's text padding
+   ============================================ */
+.theme-toggle {
+  padding: 7px;
+  color: var(--text-secondary);
+}
+
+/* Holds its size before the icon arrives. The component renders an empty slot
+   on the server — it cannot know which theme this browser resolves to — and
+   fills it on mount; without a reserved box the navbar would jump. */
+.theme-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+}
+
+/* ============================================
+   COLLAPSIBLE CARD — a <details> wearing .card
+   ============================================ */
+/* The card's own padding moves onto the summary and body, so the whole
+   header strip is clickable rather than just the text inside it. */
+.collapsible { padding: 0; }
+
+.collapsible > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 24px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius-lg);
+}
+
+/* Safari draws its own triangle through a pseudo-element that list-style
+   alone does not reach. */
+.collapsible > summary::-webkit-details-marker { display: none; }
+
+.collapsible > summary:hover { background: var(--bg-card-hover); }
+
+.collapsible > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.collapsible[open] > summary {
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.collapsible-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.collapsible-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  transition: transform var(--duration) var(--ease);
+}
+
+.collapsible[open] .collapsible-chevron { transform: rotate(180deg); }
+
+.collapsible-body { padding: 18px 24px 24px; }
+
+/* ============================================
+   DRAWER — slides in from the left, over a backdrop
+   ============================================ */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 900;
+  animation: fadeIn 0.2s var(--ease) forwards;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(420px, 92vw);
+  z-index: 901;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  animation: drawerIn 0.22s var(--ease);
+}
+
+@keyframes drawerIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The list is the only thing that scrolls, so the header and its column
+   headings stay put however long the list gets. */
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* A sortable column heading. Styled as a full-width button so the whole cell
+   is the hit target rather than just the label. */
+.sort-th {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.sort-th:hover { color: var(--text-primary); }
+
+/* Holds the arrow's width whether or not this column is the active one, so
+   switching sort column doesn't shift the headings sideways. */
+.sort-arrow {
+  width: 9px;
+  font-size: 9px;
+  color: var(--accent);
+}
 
 /* ============================================
    SCROLLBAR

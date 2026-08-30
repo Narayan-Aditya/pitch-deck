@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
-import { fetchAllUsage } from '@/lib/usage';
+import { fetchAllUsage, fetchUserBrands } from '@/lib/usage';
 
 function relativeTime(ts) {
   if (!ts) return 'never';
@@ -21,11 +21,118 @@ function relativeTime(ts) {
 // is what actually refuses a lookup (lib/quota.js); this only draws the number.
 const MONTHLY_LIMIT = 20;
 
+function formatDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// Every deck one person has built. Opens from the "See all" cell in the table.
+function BrandsDrawer({ person, onClose }) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState('');
+  // Newest first, matching the order the query already returns them in.
+  const [sort, setSort] = useState({ key: 'created_at', asc: false });
+
+  useEffect(() => {
+    let active = true;
+    fetchUserBrands(person.user_id)
+      .then(r => { if (active) setRows(r); })
+      .catch(err => { if (active) { setError(err.message || 'Could not load brands'); setRows([]); } });
+    return () => { active = false; };
+  }, [person.user_id]);
+
+  // Escape closes it, which is what anyone who has used a drawer will try
+  // before hunting for the button.
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Clicking the active column flips direction; clicking the other one switches
+  // to it and starts from the direction that column reads best in — A-Z for a
+  // name, newest-first for a date.
+  function sortBy(key) {
+    setSort(s => (s.key === key ? { key, asc: !s.asc } : { key, asc: key === 'brand_name' }));
+  }
+
+  const sorted = rows && [...rows].sort((a, b) => {
+    const dir = sort.asc ? 1 : -1;
+    if (sort.key === 'brand_name') {
+      return dir * (a.brand_name || '').localeCompare(b.brand_name || '', 'en', { sensitivity: 'base' });
+    }
+    return dir * (new Date(a.created_at) - new Date(b.created_at));
+  });
+
+  const arrow = key => (sort.key === key ? (sort.asc ? '▲' : '▼') : '');
+
+  return (
+    <>
+      <div className="drawer-backdrop" onClick={onClose} />
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label={`Brands built by ${person.full_name || person.email}`}>
+        <div className="drawer-header">
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: '15px' }}>Brands</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', overflowWrap: 'anywhere' }}>
+              {person.full_name || person.email}
+              {rows && ` · ${rows.length} ${rows.length === 1 ? 'deck' : 'decks'}`}
+            </div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        <div className="drawer-body">
+          {error && (
+            <p style={{ padding: '20px', fontSize: '13px', color: 'var(--error)' }}>{error}</p>
+          )}
+
+          {!rows && !error ? (
+            <div style={{ textAlign: 'center', padding: '48px' }}>
+              <div className="spinner" style={{ width: '28px', height: '28px', margin: '0 auto' }} />
+            </div>
+          ) : sorted && sorted.length === 0 && !error ? (
+            <p style={{ padding: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
+              No decks built yet.
+            </p>
+          ) : sorted && sorted.length > 0 && (
+            <table className="report-table">
+              <thead>
+                <tr>
+                  <th aria-sort={sort.key === 'brand_name' ? (sort.asc ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="sort-th" onClick={() => sortBy('brand_name')}>
+                      Brand name <span className="sort-arrow">{arrow('brand_name')}</span>
+                    </button>
+                  </th>
+                  <th style={{ width: '40%' }}
+                    aria-sort={sort.key === 'created_at' ? (sort.asc ? 'ascending' : 'descending') : 'none'}>
+                    <button type="button" className="sort-th" onClick={() => sortBy('created_at')}>
+                      Date <span className="sort-arrow">{arrow('created_at')}</span>
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(r => (
+                  <tr key={r.id}>
+                    <td style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{r.brand_name || '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{formatDate(r.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </aside>
+    </>
+  );
+}
+
 export default function AdminPage() {
   const { profile, loading: authLoading } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [openFor, setOpenFor] = useState(null);
 
   useEffect(() => {
     if (authLoading || !profile?.is_admin) return;
@@ -54,7 +161,7 @@ export default function AdminPage() {
         <div className="container" style={{ maxWidth: '480px', textAlign: 'center' }}>
           <h2 style={{ marginBottom: '12px' }}>Not your page</h2>
           <p style={{ marginBottom: '20px' }}>Team usage is only visible to admins.</p>
-          <Link href="/" className="btn btn-primary">← Back to my reports</Link>
+          <Link href="/" className="btn btn-primary">← Home</Link>
         </div>
       </div>
     );
@@ -63,11 +170,9 @@ export default function AdminPage() {
   const totals = rows.reduce(
     (acc, r) => ({
       reports: acc.reports + (r.reports_created || 0),
-      decks: acc.decks + (r.decks_downloaded || 0),
-      slides: acc.slides + (r.slides_exported || 0),
       lookups: acc.lookups + (r.lookups_this_month || 0),
     }),
-    { reports: 0, decks: 0, slides: 0, lookups: 0 }
+    { reports: 0, lookups: 0 }
   );
 
   return (
@@ -76,7 +181,7 @@ export default function AdminPage() {
 
         <div style={{ marginBottom: '28px' }}>
           <Link href="/" className="btn btn-ghost btn-sm" style={{ marginBottom: '16px', display: 'inline-flex' }}>
-            ← My reports
+            ← Home
           </Link>
           <h1 style={{ fontSize: '28px', marginBottom: '6px' }}>Team usage</h1>
           <p style={{ fontSize: '14px' }}>
@@ -92,14 +197,6 @@ export default function AdminPage() {
           <div className="metric-card">
             <div className="metric-value">{totals.reports}</div>
             <div className="metric-label">Decks built</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-value">{totals.decks}</div>
-            <div className="metric-label">Downloaded as .pptx</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-value">{totals.slides}</div>
-            <div className="metric-label">Sent to Google Slides</div>
           </div>
           <div className="metric-card">
             <div className="metric-value">{totals.lookups}</div>
@@ -128,6 +225,7 @@ export default function AdminPage() {
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   <th style={{ textAlign: 'left', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Person</th>
                   <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Built</th>
+                  <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Brands</th>
                   <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Downloaded</th>
                   <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Slides</th>
                   <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Lookups</th>
@@ -158,6 +256,11 @@ export default function AdminPage() {
                       </div>
                     </td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600 }}>{r.reports_created}</td>
+                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpenFor(r)}>
+                        See all
+                      </button>
+                    </td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600 }}>{r.decks_downloaded}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600 }}>{r.slides_exported ?? 0}</td>
                     {/* Against the monthly allowance, so a person who is out
@@ -176,14 +279,9 @@ export default function AdminPage() {
             </table>
           </div>
         )}
-
-        <p className="form-hint" style={{ marginTop: '16px' }}>
-          &ldquo;Reports&rdquo; is how many they started. &ldquo;Decks&rdquo; is how many .pptx files
-          they actually downloaded — the gap between the two is work that never got sent.
-          &ldquo;Slides&rdquo; is the same deck pushed straight into Google Slides instead;
-          a report can be counted in both if it went out twice.
-        </p>
       </div>
+
+      {openFor && <BrandsDrawer person={openFor} onClose={() => setOpenFor(null)} />}
     </div>
   );
 }

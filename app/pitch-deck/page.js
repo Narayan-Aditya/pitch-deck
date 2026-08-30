@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth, getDriveToken, forgetDriveToken } from '@/lib/AuthContext';
 import { DriveAuthError, uploadPptxAsGoogleSlides } from '@/lib/googleSlides';
@@ -95,8 +96,42 @@ function Row({ label, value, missing }) {
   );
 }
 
+// A .card that folds shut. Closed on arrival — these two panels are the
+// working-out behind the deck, wanted when a number looks wrong and in the way
+// the rest of the time. <details> rather than useState: the open/closed state
+// belongs to the element, and the keyboard and screen-reader behaviour that
+// goes with a disclosure comes for free.
+function Collapsible({ title, children }) {
+  return (
+    <details className="card collapsible" style={{ marginBottom: '20px' }}>
+      <summary>
+        <span className="collapsible-title">{title}</span>
+        <span className="collapsible-chevron" aria-hidden="true">▼</span>
+      </summary>
+      <div className="collapsible-body">{children}</div>
+    </details>
+  );
+}
+
+// useSearchParams opts the tree into client rendering, so it sits behind a
+// Suspense boundary — without one the whole page falls out of the static
+// prerender and Next fails the build.
 export default function PitchDeckPage() {
+  return (
+    <Suspense fallback={null}>
+      <PitchDeck />
+    </Suspense>
+  );
+}
+
+function PitchDeck() {
   const { connectDrive } = useAuth();
+
+  // Carried over from the prospect feed on the home page. Only a name — the
+  // feed reads headlines, and a headline never gives the brand's website. So it
+  // is shown as a reminder of who this deck is for, not prefilled into the URL
+  // box where a wrong guess would send the scraper to another company's site.
+  const prospect = useSearchParams().get('brand');
 
   const [url, setUrl] = useState('');
   const [running, setRunning] = useState(false);
@@ -403,14 +438,14 @@ export default function PitchDeckPage() {
     <div className="page" style={{ padding: '32px 0 120px' }}>
       <div className="container" style={{ maxWidth: '820px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', gap: '12px', flexWrap: 'wrap' }}>
-          <Link href="/" className="btn btn-ghost btn-sm">← All reports</Link>
+          <Link href="/" className="btn btn-ghost btn-sm">← Home</Link>
+          {prospect && (
+            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              Building for <strong style={{ color: 'var(--text-primary)' }}>{prospect}</strong>
+              {' — paste their website below.'}
+            </span>
+          )}
         </div>
-
-        <h1 style={{ marginBottom: '8px' }}>OGM Pitch Deck</h1>
-        <p style={{ fontSize: '14px', marginBottom: '24px', color: 'var(--text-secondary)' }}>
-          Paste a prospect&rsquo;s website. It reads their brand, audits the Instagram account
-          they link to, and finds our own content about their category — then builds the deck.
-        </p>
 
         {/* ---------- INPUT ---------- */}
         <div className="card" style={{ marginBottom: '20px' }}>
@@ -459,8 +494,7 @@ export default function PitchDeckPage() {
 
         {/* ---------- WHAT CAME OFF THE SITE ---------- */}
         {brand && (
-          <div className="card" style={{ marginBottom: '20px' }}>
-            <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>From their website</h3>
+          <Collapsible title="From their website">
             <p style={{ fontSize: '13px', marginBottom: '14px' }}>
               Everything the deck knows about this brand, and what it does when a piece is missing.
             </p>
@@ -505,13 +539,12 @@ export default function PitchDeckPage() {
               missing={!brand.about?.about_text}
             />
             <Row label="Description" value={brand.description || 'None'} missing={!brand.description} />
-          </div>
+          </Collapsible>
         )}
 
         {/* ---------- THEIR INSTAGRAM ---------- */}
         {brand && (
-          <div className="card" style={{ marginBottom: '20px' }}>
-            <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>Their Instagram</h3>
+          <Collapsible title="Their Instagram">
             <p style={{ fontSize: '13px', marginBottom: '14px' }}>
               Taken from the account their site links to. This is the one step that costs a
               paid lookup — an account already looked up recently is served from the cache
@@ -575,7 +608,7 @@ export default function PitchDeckPage() {
               </button>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>costs one lookup</span>
             </div>
-          </div>
+          </Collapsible>
         )}
 
         {/* ---------- OUR CONTENT ---------- */}

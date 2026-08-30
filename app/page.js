@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -9,26 +10,53 @@ import { useAuth } from '@/lib/AuthContext';
 // two ways to start one. Both are gone: there is a single flow now, and nothing
 // reads the saved reports any more — who made how many is the admin dashboard's
 // question, and it answers it from the event log rather than from this list.
+//
+// What sits here instead is the prospect feed: Indian brands that did something
+// this week worth pitching against, read off three trade-press RSS feeds.
 
-const STEPS = [
-  ['Read their site', 'Brand colour, social channels and the About copy — one fetch, no typing.'],
-  ['Audit their Instagram', 'The account their site links to. Cached, so the same prospect is never paid for twice.'],
-  ['Pick the proof', 'Our own reels and episodes about their category, curated or searched.'],
-  ['Send it', 'Straight into Google Slides, or download the .pptx.'],
-];
+// What each trigger means to someone about to pitch. The label is what shows on
+// the chip; the order here is the order they are worth acting on.
+const TRIGGER_LABELS = {
+  funding: 'just raised',
+  ambassador: 'signed a face',
+  agency: 'picked an agency',
+  people: 'new marketing head',
+  campaign: 'running a campaign',
+};
+
+function relativeDay(iso) {
+  if (!iso) return '';
+  const days = Math.floor((Date.now() - new Date(iso)) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
 
 export default function HomePage() {
   const { profile } = useAuth();
+  const [feed, setFeed] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/prospects')
+      .then(r => r.json())
+      .then(d => {
+        if (!active) return;
+        if (d.success) setFeed(d);
+        else setError(d.error || 'Could not read the feeds');
+      })
+      .catch(() => { if (active) setError('Could not reach the feeds.'); });
+    return () => { active = false; };
+  }, []);
 
   return (
     <div className="page" style={{ padding: '48px 0' }}>
       <div className="container" style={{ maxWidth: '820px' }}>
 
-        <div style={{ textAlign: 'center', marginBottom: '56px' }} className="animate-fade-up">
-          <h1 style={{ marginBottom: '16px', lineHeight: 1.15 }}>OGM Pitch Deck</h1>
-          <p style={{ fontSize: '18px', color: 'var(--text-secondary)', maxWidth: '560px', margin: '0 auto 32px' }}>
-            Paste a prospect&rsquo;s website. Get an eleven-slide proposal, coloured to their brand.
-          </p>
+        <div style={{ textAlign: 'center' }} className="animate-fade-up">
+          <h1 style={{ marginBottom: '32px', lineHeight: 1.15 }}>OGM Pitch Deck</h1>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/pitch-deck" className="btn btn-primary btn-lg">
               Build a deck
@@ -41,22 +69,100 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-          {STEPS.map(([title, detail], i) => (
-            <div key={title} className="card" style={{ padding: '20px' }}>
-              <div style={{
-                width: '26px', height: '26px', borderRadius: '50%', marginBottom: '10px',
-                background: 'var(--accent-soft, #e6f2ec)', color: 'var(--accent, #1b6b4a)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '13px', fontWeight: 700,
-              }}>
-                {i + 1}
-              </div>
-              <div style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>{title}</div>
-              <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.55 }}>{detail}</div>
+        <div style={{ marginTop: '56px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '6px' }}>
+            <h2 style={{ fontSize: '20px' }}>Worth pitching this week</h2>
+            {feed && (
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {feed.brands.length} brands · Entrackr, afaqs!, BestMediaInfo
+              </span>
+            )}
+          </div>
+          <p style={{ fontSize: '13px', marginBottom: '18px' }}>
+            Indian brands that raised money, signed a face, hired a marketing head or put a campaign
+            out. Refreshes itself every half hour.
+          </p>
+
+          {/* A feed that quietly went empty and a feed that is still loading look
+              the same on screen, so each says which it is. */}
+          {error && (
+            <div className="card" style={{ borderColor: 'var(--error)' }}>
+              <p style={{ fontSize: '13px', color: 'var(--error)', margin: 0 }}>{error}</p>
             </div>
-          ))}
+          )}
+
+          {!feed && !error && (
+            <div style={{ textAlign: 'center', padding: '48px' }}>
+              <div className="spinner" style={{ width: '32px', height: '32px', margin: '0 auto' }} />
+            </div>
+          )}
+
+          {feed?.failed?.length > 0 && (
+            <div className="card" style={{ borderColor: 'var(--warning)', marginBottom: '14px', padding: '12px 16px' }}>
+              <p style={{ fontSize: '12px', color: 'var(--warning)', margin: 0 }}>
+                {feed.failed.map(f => `${f.source} didn’t answer (${f.error})`).join(' · ')}
+                {' — the rest of the feed is still current.'}
+              </p>
+            </div>
+          )}
+
+          {feed && feed.brands.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px', border: '1px dashed var(--border)', borderRadius: 'var(--radius-xl)' }}>
+              <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '13px' }}>
+                Nothing pitchable in the feeds right now. It refills as the outlets publish.
+              </p>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {feed?.brands.map(b => (
+              <div key={b.key} className="card" style={{ padding: '16px 18px' }}>
+                <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                      <span style={{ fontWeight: 700, fontSize: '15px' }}>{b.brand}</span>
+                      {/* Two different kinds of signal on one brand is the
+                          strongest thing this feed can tell you, so it gets said
+                          out loud rather than left to be counted. */}
+                      {b.signals.length > 1 && (
+                        <span className="badge badge-accent" style={{ fontSize: '10px' }}>
+                          {b.signals.length} signals
+                        </span>
+                      )}
+                    </div>
+
+                    {b.signals.map(s => (
+                      <div key={s.trigger} style={{ display: 'flex', gap: '8px', alignItems: 'baseline', flexWrap: 'wrap', marginTop: '4px' }}>
+                        <span className="badge" style={{ fontSize: '10px', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                          {TRIGGER_LABELS[s.trigger] || s.trigger}
+                        </span>
+                        <span style={{ fontSize: '13px', color: 'var(--text-secondary)', flex: '1 1 220px' }}>
+                          <a href={s.url} target="_blank" rel="noreferrer">{s.reason}</a>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                            {' — '}{s.sources.join(', ')}{s.publishedAt ? `, ${relativeDay(s.publishedAt)}` : ''}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* The feed knows the brand's name but never its website, and
+                      guessing a domain would point the scraper at the wrong
+                      company. So this carries the name across and the deck page
+                      asks for the URL. */}
+                  <Link
+                    href={`/pitch-deck?brand=${encodeURIComponent(b.brand)}`}
+                    className="btn btn-secondary btn-sm"
+                    style={{ flexShrink: 0 }}
+                  >
+                    Build deck
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
+
       </div>
     </div>
   );
