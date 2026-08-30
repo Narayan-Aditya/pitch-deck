@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
 import { loadCreatorCorpus, toWireItem } from '@/lib/creatorCorpus';
 import { buildQueryProfile, rankCandidates, THRESHOLDS } from '@/lib/relevance';
-import { rankCreatorContent } from '@/lib/openaiGenerate';
 
 const CANDIDATE_LIMIT = 12;
 
-// Stage 2 is a model call, so the 10s serverless default isn't enough. 60s is
-// the Hobby-plan maximum.
+// Loading and scoring the whole creator corpus on a cold start can outrun the
+// 10s serverless default. 60s is the Hobby-plan maximum.
 export const maxDuration = 60;
 
 // Wire shape plus the ranking fields only this route produces.
@@ -71,46 +70,18 @@ export async function POST(request) {
       });
     }
 
-    // Stage 2: the model picks the best few and writes the per-card reason.
-    // It also adjudicates any sentimentRisk item — a video that criticises the
-    // prospect must never reach the slide.
-    let picks = null;
-    let ranked = true;
-    try {
-      picks = await rankCreatorContent({ brandName, about, candidates, limit });
-    } catch (err) {
-      console.error('Creator rerank failed, falling back to deterministic:', err.message);
-      ranked = false;
-    }
-
-    let matches;
-    if (picks) {
-      const byId = new Map(candidates.map(c => [c.id, c]));
-      matches = picks
-        .filter(p => p.relevance !== 'weak')
-        .map(p => {
-          const c = byId.get(p.id);
-          if (!c) return null;
-          // A regex-flagged item only survives if the model explicitly called it positive.
-          if (c.sentimentRisk && p.sentiment !== 'positive') return null;
-          // And no brand-tier item survives a negative read at all. The regex
-          // catches obvious hostility ("SCAM", "FOOLING"); plenty of critical
-          // framing isn't obvious, so the model's judgement gates every item
-          // that actually names the prospect.
-          if (c.brandHit && p.sentiment === 'negative') return null;
-          return { ...toRankedItem(c), relevance: p.relevance, reason: p.reason };
-        })
-        .filter(Boolean)
-        .slice(0, limit);
-    } else {
-      // Degraded path: stricter floor, and never trust a flagged item without
-      // the model having vetted it.
-      matches = candidates
-        .filter(c => !c.sentimentRisk)
-        .filter(c => c.brandHit || c.score >= THRESHOLDS.DEGRADED_FLOOR)
-        .slice(0, limit)
-        .map(c => ({ ...toRankedItem(c), relevance: 'adjacent', reason: '' }));
-    }
+    // Scoring alone decides the slide. Brand-tier items are always kept; topical
+    // ones must clear a floor stricter than the one that got them shortlisted.
+    // Anything the sentiment regex flagged is dropped outright — there is no
+    // second opinion available to clear it, so a possible swipe at the prospect
+    // never reaches the slide.
+    const matches = candidates
+      .filter(c => !c.sentimentRisk)
+      .filter(c => c.brandHit || c.score >= THRESHOLDS.TOPICAL_FLOOR)
+      .slice(0, limit)
+      // Both fields are part of the shape /api/creator-library also emits; the
+      // per-item copy that used to fill `reason` came from the model.
+      .map(c => ({ ...toRankedItem(c), relevance: 'adjacent', reason: '' }));
 
     if (matches.length < THRESHOLDS.MIN_ITEMS && !matches.some(m => m.tier === 'brand')) {
       return NextResponse.json({
@@ -121,7 +92,7 @@ export async function POST(request) {
     }
 
     return NextResponse.json({
-      success: true, ranked, matches,
+      success: true, matches,
       ...(debug ? { debug: debugPayload } : {}),
     });
   } catch (err) {
